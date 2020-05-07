@@ -194,7 +194,7 @@ bool shade_pixel(int x, int y, uint primitive_index, out ShadedData shaded)
 	// have same value.
 	i16x4 texel0, texel1;
 
-	if (uses_texel0 || uses_pipelined_texel1)
+	if (uses_texel0)
 	{
 		uint tile_info_index0 = uint(state_indices.elems[primitive_index].tile_infos[tile0]);
 		TileInfo tile_info0 = load_tile_info(tile_info_index0);
@@ -214,6 +214,7 @@ bool shade_pixel(int x, int y, uint primitive_index, out ShadedData shaded)
 		bool valid_line = uint(span_setups.elems[span_offsets.offset + (y - span_offsets.ylo + 1)].valid_line) != 0u;
 		bool long_span = span_setup.lodlength >= 8;
 		bool end_span = x == (flip ? span_setup.end_x : span_setup.start_x);
+
 		if (end_span && long_span && valid_line)
 		{
 			ivec3 stw = span_setups.elems[span_offsets.offset + (y - span_offsets.ylo + 1)].stzw.xyw >> 16;
@@ -271,7 +272,11 @@ bool shade_pixel(int x, int y, uint primitive_index, out ShadedData shaded)
 
 		// Pipelining, texel1 is promoted to texel0 in cycle1.
 		// I don't think hardware ever intended for you to access texels in second cycle due to this nature.
+		i16x4 tmp_texel = combined_inputs.texel0;
 		combined_inputs.texel0 = combined_inputs.texel1;
+		// Following the pipelining, texel1 should become texel0 of next pixel,
+		// but let's not go there ...
+		combined_inputs.texel1 = tmp_texel;
 
 		combined = u8x4(combiner_cycle1(combined_inputs,
 		                                combiner_inputs_rgb1,

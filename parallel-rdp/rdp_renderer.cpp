@@ -892,7 +892,11 @@ static bool combiner_uses_texel0(const StaticRasterizationState &state)
 {
 	// Texel0 can be safely used in cycle0 of CYCLE2 mode, or in cycle1 (only cycle) of CYCLE1 mode.
 	if ((state.flags & RASTERIZATION_MULTI_CYCLE_BIT) != 0)
-		return combiner_accesses_texel0(state.combiner[0]);
+	{
+		// In second cycle, Texel0 and Texel1 swap around ...
+		return combiner_accesses_texel0(state.combiner[0]) ||
+		       combiner_accesses_texel1(state.combiner[1]);
+	}
 	else
 		return combiner_accesses_texel0(state.combiner[1]);
 }
@@ -902,7 +906,10 @@ static bool combiner_uses_texel1(const StaticRasterizationState &state)
 	// Texel1 can be safely used in cycle0 of CYCLE2 mode, and never in cycle1 mode.
 	// Texel0 can be safely accessed in cycle1, which is an alias due to pipelining.
 	if ((state.flags & RASTERIZATION_MULTI_CYCLE_BIT) != 0)
-		return combiner_accesses_texel1(state.combiner[0]) || combiner_accesses_texel0(state.combiner[1]);
+	{
+		return combiner_accesses_texel1(state.combiner[0]) ||
+		       combiner_accesses_texel0(state.combiner[1]);
+	}
 	else
 		return false;
 }
