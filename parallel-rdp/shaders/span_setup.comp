@@ -191,5 +191,6 @@ void main()
     span_setup.start_x = start_x;
     span_setup.end_x = end_x;
     span_setup.valid_line = u16(!all(invalid_line) && !all_over && !all_under);
+    span_setup.lodlength = i16(flip ? (end_x - span_setup.interpolation_base_x) : (span_setup.interpolation_base_x - start_x));
     store_span_setup(gl_GlobalInvocationID.x, span_setup);
 }

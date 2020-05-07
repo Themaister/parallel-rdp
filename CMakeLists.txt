@@ -155,6 +155,8 @@ add_rdp_test(interpolation-color-depth-alpha-test-dither-noise-pattern)
 add_rdp_test(interpolation-color-depth-alpha-test-dither-noise-flip)
 add_rdp_test(interpolation-color-depth-alpha-test-dither-noise-noise)
 
+add_rdp_test(interpolation-color-texture-pipelined-texel1)
+add_rdp_test(interpolation-color-texture-pipelined-texel1-perspective)
 add_rdp_test(interpolation-color-texture-rgba4)
 add_rdp_test(interpolation-color-texture-rgba8)
 add_rdp_test(interpolation-color-texture-rgba16)

@@ -121,6 +121,7 @@ struct RasterizationTestVariant
 	bool color_depth_alias;
 	bool depth_compare;
 	bool texture;
+	bool pipelined_texel1;
 	bool tlut;
 	bool tlut_type;
 	bool mid_texel;
@@ -305,7 +306,7 @@ static bool run_conformance_rasterization(ReplayerState &state, const Arguments 
 		else
 		{
 			state.builder.set_combiner_1cycle({
-					{ RGBMulAdd::Zero,   RGBMulSub::Zero,   RGBMul::Zero,   RGBAdd::Texel0 },
+					{ RGBMulAdd::Zero,   RGBMulSub::Zero,   RGBMul::Zero,   variant.pipelined_texel1 ? RGBAdd::Texel1 : RGBAdd::Texel0 },
 					{ AlphaAddSub::Zero, AlphaAddSub::Zero, AlphaMul::Zero, AlphaAddSub::Texel0Alpha }
 			});
 		}
@@ -1301,6 +1302,27 @@ static int main_inner(int argc, char **argv)
 		variant.color_depth_alias = true;
 		variant.depth_compare = true;
 		variant.randomize_rdram = true;
+		return run_conformance_rasterization(state, args, variant);
+	}});
+
+	suites.push_back({ "interpolation-color-texture-pipelined-texel1", [](ReplayerState &state, const Arguments &args) -> bool {
+		RasterizationTestVariant variant = {};
+		variant.color = true;
+		variant.texture = true;
+		variant.pipelined_texel1 = true;
+		variant.texture_size = TextureSize::Bpp16;
+		variant.texture_format = TextureFormat::RGBA;
+		return run_conformance_rasterization(state, args, variant);
+	}});
+
+	suites.push_back({ "interpolation-color-texture-pipelined-texel1-perspective", [](ReplayerState &state, const Arguments &args) -> bool {
+		RasterizationTestVariant variant = {};
+		variant.color = true;
+		variant.texture = true;
+		variant.pipelined_texel1 = true;
+		variant.texture_size = TextureSize::Bpp16;
+		variant.texture_format = TextureFormat::RGBA;
+		variant.perspective = true;
 		return run_conformance_rasterization(state, args, variant);
 	}});
 

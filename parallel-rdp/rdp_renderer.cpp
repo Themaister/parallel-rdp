@@ -907,6 +907,15 @@ static bool combiner_uses_texel1(const StaticRasterizationState &state)
 		return false;
 }
 
+static bool combiner_uses_pipelined_texel1(const StaticRasterizationState &state)
+{
+	// If you access Texel1 in cycle1 mode, you end up reading the next pixel's color for whatever reason.
+	if ((state.flags & RASTERIZATION_MULTI_CYCLE_BIT) == 0)
+		return combiner_accesses_texel1(state.combiner[1]);
+	else
+		return false;
+}
+
 static bool combiner_uses_lod_frac(const StaticRasterizationState &state)
 {
 	// LODFrac is only safely computed in 2cycle mode in the first combiner cycle, otherwise, it is basically garbage.
@@ -1122,17 +1131,23 @@ void Renderer::deduce_static_texture_state(unsigned tile, unsigned max_lod_level
 		// If all tiles we sample have the same fmt and size (common case), we can use a static variant.
 		bool uses_texel0 = combiner_uses_texel0(state);
 		bool uses_texel1 = combiner_uses_texel1(state);
+		bool uses_pipelined_texel1 = combiner_uses_pipelined_texel1(state);
 		bool uses_lod_frac = combiner_uses_lod_frac(state);
 
-		state.flags &= ~(RASTERIZATION_USES_TEXEL0_BIT | RASTERIZATION_USES_TEXEL1_BIT | RASTERIZATION_USES_LOD_BIT);
+		state.flags &= ~(RASTERIZATION_USES_TEXEL0_BIT |
+		                 RASTERIZATION_USES_TEXEL1_BIT |
+		                 RASTERIZATION_USES_PIPELINED_TEXEL1_BIT |
+		                 RASTERIZATION_USES_LOD_BIT);
 		if (uses_texel0)
 			state.flags |= RASTERIZATION_USES_TEXEL0_BIT;
 		if (uses_texel1)
 			state.flags |= RASTERIZATION_USES_TEXEL1_BIT;
+		if (uses_pipelined_texel1)
+			state.flags |= RASTERIZATION_USES_PIPELINED_TEXEL1_BIT;
 		if (uses_lod_frac || (state.flags & RASTERIZATION_TEX_LOD_ENABLE_BIT) != 0)
 			state.flags |= RASTERIZATION_USES_LOD_BIT;
 
-		if (!uses_texel0 && !uses_texel1)
+		if (!uses_texel0 && !uses_texel1 && !uses_pipelined_texel1)
 			return;
 
 		bool use_lod = (state.flags & RASTERIZATION_TEX_LOD_ENABLE_BIT) != 0;
@@ -1218,7 +1233,8 @@ SpanInfoOffsets Renderer::allocate_span_jobs(const TriangleSetup &setup)
 	int max_active_sub_scanline = std::min(setup.yl - 1, int(stream.scissor_state.yhi) - 1);
 	int max_active_line = max_active_sub_scanline >> 2;
 
-	int height = std::max(max_active_line - min_active_line + 1, 0);
+	// Need to poke into next scanline validation for certain workarounds.
+	int height = std::max(max_active_line - min_active_line + 2, 0);
 	height = std::min(height, 1024);
 
 	int num_jobs = (height + ImplementationConstants::DefaultWorkgroupSize - 1) / ImplementationConstants::DefaultWorkgroupSize;

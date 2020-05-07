@@ -102,6 +102,7 @@ bool shade_pixel(int x, int y, uint primitive_index, out ShadedData shaded)
 	bool mid_texel = (static_state_flags & RASTERIZATION_SAMPLE_MID_TEXEL_BIT) != 0;
 	bool uses_texel0 = (static_state_flags & RASTERIZATION_USES_TEXEL0_BIT) != 0;
 	bool uses_texel1 = (static_state_flags & RASTERIZATION_USES_TEXEL1_BIT) != 0;
+	bool uses_pipelined_texel1 = (static_state_flags & RASTERIZATION_USES_PIPELINED_TEXEL1_BIT) != 0;
 	bool uses_lod = (static_state_flags & RASTERIZATION_USES_LOD_BIT) != 0;
 
 	if ((static_state_flags & RASTERIZATION_NEED_NOISE_BIT) != 0)
@@ -193,7 +194,7 @@ bool shade_pixel(int x, int y, uint primitive_index, out ShadedData shaded)
 	// have same value.
 	i16x4 texel0, texel1;
 
-	if (uses_texel0)
+	if (uses_texel0 || uses_pipelined_texel1)
 	{
 		uint tile_info_index0 = uint(state_indices.elems[primitive_index].tile_infos[tile0]);
 		TileInfo tile_info0 = load_tile_info(tile_info_index0);
@@ -205,6 +206,30 @@ bool shade_pixel(int x, int y, uint primitive_index, out ShadedData shaded)
 		}
 #endif
 		texel0 = sample_texture(tile_info0, tmem_instance_index, st, tlut, tlut_type, sample_quad, mid_texel);
+	}
+
+	// A very awkward mechanism where we peek into the next pixel, or in some cases, the next scanline's first pixel.
+	if (uses_pipelined_texel1)
+	{
+		bool valid_line = uint(span_setups.elems[span_offsets.offset + (y - span_offsets.ylo + 1)].valid_line) != 0u;
+		bool long_span = span_setup.lodlength >= 8;
+		bool end_span = x == (flip ? span_setup.end_x : span_setup.start_x);
+		if (end_span && long_span && valid_line)
+		{
+			ivec3 stw = span_setups.elems[span_offsets.offset + (y - span_offsets.ylo + 1)].stzw.xyw >> 16;
+			if (perspective)
+			{
+				bool st_overflow;
+				st = perspective_divide(stw, st_overflow);
+			}
+			else
+				st = no_perspective_divide(stw);
+		}
+		else
+			st = interpolate_st_single(span_setup.stzw, attr.dstzw_dx, dx + interpolation_direction, perspective);
+
+		tile1 = tile0;
+		uses_texel1 = true;
 	}
 
 	if (uses_texel1)

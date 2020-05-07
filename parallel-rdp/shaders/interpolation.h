@@ -71,6 +71,23 @@ void interpolate_st_copy(SpanSetup span, ivec4 dstzw_dx, int x, bool perspective
 		st = no_perspective_divide(stw >> 16);
 }
 
+ivec2 interpolate_st_single(ivec4 stzw, ivec4 dstzw_dx, int dx, bool perspective)
+{
+	ivec3 stw = stzw.xyw + (dstzw_dx.xyw & ~0x1f) * dx;
+	stw >>= 16;
+	ivec2 st;
+
+	if (perspective)
+	{
+		bool st_overflow;
+		st = perspective_divide(stw, st_overflow);
+	}
+	else
+		st = no_perspective_divide(stw);
+
+	return st;
+}
+
 void interpolate_stz(ivec4 stzw, ivec4 dstzw_dx, ivec4 dstzw_dy, int dx, int coverage, bool perspective, bool uses_lod,
                      int flip_direction, out ivec2 st, out ivec2 st_dx, out ivec2 st_dy, out int z, inout bool st_overflow)
 {
