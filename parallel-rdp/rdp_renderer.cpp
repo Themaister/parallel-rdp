@@ -1228,6 +1228,10 @@ void Renderer::draw_shaded_primitive(const TriangleSetup &setup, const Attribute
 		indices.tile_indices[i] = stream.tile_info_state_cache.add(tiles[i]);
 	stream.state_indices.add(indices);
 
+	fb.color_write_pending = true;
+	if (stream.depth_blend_state.flags & DEPTH_BLEND_DEPTH_UPDATE_BIT)
+		fb.depth_write_pending = true;
+
 	if (need_flush())
 		flush_queues();
 }
@@ -1912,6 +1916,10 @@ void Renderer::begin_new_context()
 	stream.span_info_jobs.reset();
 	stream.max_shaded_tiles = 0;
 
+	fb.deduced_height = 0;
+	fb.color_write_pending = false;
+	fb.depth_write_pending = false;
+
 	stream.tmem_upload_infos.clear();
 }
 
@@ -1948,8 +1956,59 @@ void Renderer::set_tile_size(uint32_t tile, uint32_t slo, uint32_t shi, uint32_t
 	tiles[tile].size.thi = thi;
 }
 
+bool Renderer::tmem_upload_needs_flush(uint32_t addr) const
+{
+	// Not perfect, since TMEM upload could slice into framebuffer,
+	// but I doubt this will be an issue (famous last words ...)
+
+	if (fb.color_write_pending)
+	{
+		uint32_t offset = (addr - fb.addr) & (rdram->get_create_info().size - 1);
+		uint32_t pending_pixels = fb.deduced_height * fb.width;
+
+		switch (fb.fmt)
+		{
+		case FBFormat::RGBA5551:
+		case FBFormat::I8:
+			offset >>= 1;
+			break;
+
+		case FBFormat::RGBA8888:
+			offset >>= 2;
+			break;
+
+		default:
+			break;
+		}
+
+		if (offset < pending_pixels)
+		{
+			//LOGI("Flushing render pass due to coherent TMEM fetch from color buffer.\n");
+			return true;
+		}
+	}
+
+	if (fb.depth_write_pending)
+	{
+		uint32_t offset = (addr - fb.depth_addr) & (rdram->get_create_info().size - 1);
+		uint32_t pending_pixels = fb.deduced_height * fb.width;
+		offset >>= 1;
+
+		if (offset < pending_pixels)
+		{
+			//LOGI("Flushing render pass due to coherent TMEM fetch from depth buffer.\n");
+			return true;
+		}
+	}
+
+	return false;
+}
+
 void Renderer::load_tile(uint32_t tile, const LoadTileInfo &info)
 {
+	if (tmem_upload_needs_flush(info.tex_addr))
+		flush();
+
 	auto &size = tiles[tile].size;
 	auto &meta = tiles[tile].meta;
 	size.slo = info.slo;
