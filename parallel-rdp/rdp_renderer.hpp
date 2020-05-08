@@ -86,6 +86,7 @@ public:
 	void set_tile(uint32_t tile, const TileMeta &info);
 	void set_tile_size(uint32_t tile, uint32_t slo, uint32_t shi, uint32_t tlo, uint32_t thi);
 	void load_tile(uint32_t tile, const LoadTileInfo &info);
+	void load_tile_iteration(uint32_t tile, const LoadTileInfo &info, uint32_t tmem_offset);
 
 	void set_blend_color(uint32_t color);
 	void set_fog_color(uint32_t color);

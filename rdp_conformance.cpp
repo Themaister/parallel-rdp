@@ -575,7 +575,7 @@ static bool run_conformance_load_tile(ReplayerState &state, const Arguments &arg
 	auto *rdram_gpu = reinterpret_cast<uint32_t *>(state.gpu->get_rdram());
 	rdram_gpu += 512 * 1024;
 
-	for (unsigned i = 0; i < 4096; i++)
+	for (unsigned i = 0; i < 64 * 1024; i++)
 	{
 		//auto v = uint32_t(rng.rnd());
 		auto v = ((uint32_t(4 * i + 0) & 0xff) << 24) |
@@ -630,6 +630,16 @@ static bool run_conformance_load_tile(ReplayerState &state, const Arguments &arg
 	{
 		// 4kB TMEM case.
 		if (!run_conformance_load_tile(state, args, 64, 32, 0, 128, 0, op, vram_size, tile_size))
+		{
+			LOG_FAILURE();
+			return false;
+		}
+	}
+
+	// TMEM wrap-around case.
+	if (op == Op::LoadTile)
+	{
+		if (!run_conformance_load_tile(state, args, 128, 64, 0, 128 + 8, 0, op, vram_size, tile_size))
 		{
 			LOG_FAILURE();
 			return false;

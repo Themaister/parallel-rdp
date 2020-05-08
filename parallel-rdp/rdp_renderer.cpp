@@ -2006,6 +2006,69 @@ bool Renderer::tmem_upload_needs_flush(uint32_t addr) const
 
 void Renderer::load_tile(uint32_t tile, const LoadTileInfo &info)
 {
+	if (info.mode == UploadMode::Tile)
+	{
+		auto &meta = tiles[tile].meta;
+		unsigned pixels_coverered_per_line = ((info.shi >> 2) - (info.slo >> 2)) + 1;
+
+		// Technically, 32-bpp TMEM upload will work like 16bpp, just split into two halves, but that also means
+		// we get 2kB wraparound instead of 4kB wraparound, so this works out just fine for our purposes.
+		unsigned quad_words_covered_per_line = ((pixels_coverered_per_line << unsigned(meta.size)) + 15) >> 4;
+
+		// Deal with mismatch in state, there is no reasonable scenarios where this should even matter, but you never know ...
+		if (unsigned(meta.size) > unsigned(info.size))
+			quad_words_covered_per_line <<= unsigned(meta.size) - unsigned(info.size);
+		else if (unsigned(meta.size) < unsigned(info.size))
+			quad_words_covered_per_line >>= unsigned(info.size) - unsigned(meta.size);
+
+		// Compute a conservative estimate for how many bytes we're going to splat down into TMEM.
+		unsigned bytes_covered_per_line = std::max<unsigned>(quad_words_covered_per_line * 8, meta.stride);
+
+		unsigned num_lines = ((info.thi >> 2) - (info.tlo >> 2)) + 1;
+		unsigned total_bytes_covered = bytes_covered_per_line * num_lines;
+
+		if (total_bytes_covered > 0x1000)
+		{
+			// Welp, for whatever reason, the game wants to write more than 4k of texture data to TMEM in one go.
+			// We can only handle 4kB in one go due to wrap-around effects,
+			// so split up the upload in multiple chunks.
+
+			unsigned max_lines_per_iteration = 0x1000u / bytes_covered_per_line;
+			// Align T-state.
+			max_lines_per_iteration &= ~1;
+
+			if (max_lines_per_iteration == 0)
+			{
+				LOGE("Pure insanity where content is attempting to load more than 2kB of TMEM data in one single line ...\n");
+				// Could be supported if we start splitting up horizonal direction as well, but seriously ...
+				return;
+			}
+
+			for (unsigned line = 0; line < num_lines; line += max_lines_per_iteration)
+			{
+				unsigned to_copy_lines = std::min(num_lines - line, max_lines_per_iteration);
+
+				LoadTileInfo tmp_info = info;
+				tmp_info.tlo = info.tlo + (line << 2);
+				tmp_info.thi = tmp_info.tlo + ((to_copy_lines - 1) << 2);
+				load_tile_iteration(tile, tmp_info, line * meta.stride);
+			}
+
+			auto &size = tiles[tile].size;
+			size.slo = info.slo;
+			size.shi = info.shi;
+			size.tlo = info.tlo;
+			size.thi = info.thi;
+		}
+		else
+			load_tile_iteration(tile, info, 0);
+	}
+	else
+		load_tile_iteration(tile, info, 0);
+}
+
+void Renderer::load_tile_iteration(uint32_t tile, const LoadTileInfo &info, uint32_t tmem_offset)
+{
 	if (tmem_upload_needs_flush(info.tex_addr))
 		flush();
 
@@ -2259,7 +2322,7 @@ void Renderer::load_tile(uint32_t tile, const LoadTileInfo &info)
 	upload.vram_width = upload_mode == UploadMode::Block ? upload.vram_effective_width : info.tex_width;
 	upload.vram_size = int32_t(info.size);
 
-	upload.tmem_offset = meta.offset;
+	upload.tmem_offset = (meta.offset + tmem_offset) & 0xfff;
 	upload.tmem_size = int32_t(meta.size);
 	upload.tmem_fmt = int32_t(meta.fmt);
 	upload.mode = int32_t(upload_mode);
