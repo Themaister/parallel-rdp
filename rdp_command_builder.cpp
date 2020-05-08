@@ -254,6 +254,8 @@ void CommandBuilder::flush_default_state()
 		cmd[0] |= 1 << 12;
 	cmd[0] |= 1 << 11; // bilerp0
 	cmd[0] |= 1 << 10; // bilerp1
+	if (other_modes.convert_one)
+		cmd[0] |= 1 << 9;
 	cmd[0] |= uint32_t(other_modes.rgb_dither) << 6;
 	cmd[0] |= uint32_t(other_modes.alpha_dither) << 4;
 	cmd[1] |= uint32_t(other_modes.blender_cycles[0].blend_1a) << 30;
@@ -748,5 +750,10 @@ void CommandBuilder::set_color_on_coverage(bool enable)
 void CommandBuilder::set_enable_mid_texel(bool enable)
 {
 	other_modes.mid_texel = enable;
+}
+
+void CommandBuilder::set_enable_convert_one(bool enable)
+{
+	other_modes.convert_one = enable;
 }
 }

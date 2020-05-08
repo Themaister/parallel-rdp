@@ -88,6 +88,7 @@ public:
 	void set_coverage_mode(CoverageMode mode);
 	void set_enable_sample_quad(bool enable);
 	void set_enable_mid_texel(bool enable);
+	void set_enable_convert_one(bool enable);
 
 	void set_env_color(uint8_t r, uint8_t g, uint8_t b, uint8_t a);
 	void set_blend_color(uint8_t r, uint8_t g, uint8_t b, uint8_t a);
@@ -132,6 +133,7 @@ private:
 		bool primitive_depth = false;
 		bool sample_quad = false;
 		bool mid_texel = false;
+		bool convert_one = false;
 
 		BlendModes blender_cycles[2] = {
 			{ BlendMode1A::PixelColor, BlendMode1B::PixelAlpha, BlendMode2A::PixelColor, BlendMode2B::InvPixelAlpha },

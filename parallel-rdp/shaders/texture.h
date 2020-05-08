@@ -447,7 +447,8 @@ int sample_texture_copy(TileInfo tile, uint tmem_instance, ivec2 st, int s_offse
 	return samp;
 }
 
-i16x4 sample_texture(TileInfo tile, uint tmem_instance, ivec2 st, bool tlut, bool tlut_type, bool sample_quad, bool mid_texel)
+i16x4 sample_texture(TileInfo tile, uint tmem_instance, ivec2 st, bool tlut, bool tlut_type, bool sample_quad, bool mid_texel, bool convert_one,
+                     i16x4 prev_cycle)
 {
 	st.x = clamp_and_shift_coord((tile.flags & TILE_INFO_CLAMP_S_BIT) != 0, st.x, int(tile.slo), int(tile.shi), int(tile.shift_s));
 	st.y = clamp_and_shift_coord((tile.flags & TILE_INFO_CLAMP_T_BIT) != 0, st.y, int(tile.tlo), int(tile.thi), int(tile.shift_t));
@@ -719,7 +720,16 @@ i16x4 sample_texture(TileInfo tile, uint tmem_instance, ivec2 st, bool tlut, boo
 
 	i16x4 accum;
 
-	if (mid_texel)
+	if (convert_one)
+	{
+		ivec4 prev_sext = bitfieldExtract(ivec4(prev_cycle), 0, 9);
+		ivec2 factors = sum_frac >= 32 ? prev_sext.gr : prev_sext.rg;
+		ivec4 converted = factors.r * (t10 - t_base) + factors.g * (t01 - t_base) + 0x80;
+		converted >>= 8;
+		converted += prev_sext.b;
+		accum = i16x4(converted);
+	}
+	else if (mid_texel)
 	{
 		accum = (t_base + t01 + t10 + t11 + I16_C(2)) >> I16_C(2);
 	}

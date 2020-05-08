@@ -104,6 +104,7 @@ bool shade_pixel(int x, int y, uint primitive_index, out ShadedData shaded)
 	bool uses_texel1 = (static_state_flags & RASTERIZATION_USES_TEXEL1_BIT) != 0;
 	bool uses_pipelined_texel1 = (static_state_flags & RASTERIZATION_USES_PIPELINED_TEXEL1_BIT) != 0;
 	bool uses_lod = (static_state_flags & RASTERIZATION_USES_LOD_BIT) != 0;
+	bool convert_one = (static_state_flags & RASTERIZATION_CONVERT_ONE_BIT) != 0;
 
 	if ((static_state_flags & RASTERIZATION_NEED_NOISE_BIT) != 0)
 		reseed_noise(x, y, primitive_index + global_constants.fb_info.base_primitive_index);
@@ -205,7 +206,7 @@ bool shade_pixel(int x, int y, uint primitive_index, out ShadedData shaded)
 			tile_info0.size = u8(TEX_SIZE);
 		}
 #endif
-		texel0 = sample_texture(tile_info0, tmem_instance_index, st, tlut, tlut_type, sample_quad, mid_texel);
+		texel0 = sample_texture(tile_info0, tmem_instance_index, st, tlut, tlut_type, sample_quad, mid_texel, false, i16x4(0));
 	}
 
 	// A very awkward mechanism where we peek into the next pixel, or in some cases, the next scanline's first pixel.
@@ -244,7 +245,8 @@ bool shade_pixel(int x, int y, uint primitive_index, out ShadedData shaded)
 			tile_info1.size = u8(TEX_SIZE);
 		}
 #endif
-		texel1 = sample_texture(tile_info1, tmem_instance_index, st, tlut, tlut_type, sample_quad, mid_texel);
+		texel1 = sample_texture(tile_info1, tmem_instance_index, st, tlut, tlut_type, sample_quad, mid_texel,
+		                        convert_one && multi_cycle, texel0);
 	}
 
 	int rgb_dith, alpha_dith;

@@ -1141,6 +1141,9 @@ void Renderer::deduce_static_texture_state(unsigned tile, unsigned max_lod_level
 		bool uses_pipelined_texel1 = combiner_uses_pipelined_texel1(state);
 		bool uses_lod_frac = combiner_uses_lod_frac(state);
 
+		if (uses_texel1 && (state.flags & RASTERIZATION_CONVERT_ONE_BIT) != 0)
+			uses_texel0 = true;
+
 		state.flags &= ~(RASTERIZATION_USES_TEXEL0_BIT |
 		                 RASTERIZATION_USES_TEXEL1_BIT |
 		                 RASTERIZATION_USES_PIPELINED_TEXEL1_BIT |
