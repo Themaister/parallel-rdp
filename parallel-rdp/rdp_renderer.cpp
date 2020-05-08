@@ -1207,7 +1207,17 @@ void Renderer::draw_shaded_primitive(const TriangleSetup &setup, const Attribute
 	update_deduced_height(setup);
 	stream.span_info_offsets.add(allocate_span_jobs(setup));
 
-	stream.triangle_setup.add(setup);
+	if ((stream.static_raster_state.flags & RASTERIZATION_INTERLACE_FIELD_BIT) != 0)
+	{
+		auto tmp = setup;
+		tmp.flags |= (stream.static_raster_state.flags & RASTERIZATION_INTERLACE_FIELD_BIT) ?
+				TRIANGLE_SETUP_INTERLACE_FIELD_BIT : 0;
+		tmp.flags |= (stream.static_raster_state.flags & RASTERIZATION_INTERLACE_KEEP_ODD_BIT) ?
+				TRIANGLE_SETUP_INTERLACE_KEEP_ODD_BIT : 0;
+		stream.triangle_setup.add(tmp);
+	}
+	else
+		stream.triangle_setup.add(setup);
 
 	if (constants.use_prim_depth)
 	{

@@ -949,6 +949,13 @@ static int main_inner(int argc, char **argv)
 		variant.fb_size = TextureSize::Bpp16;
 		return run_conformance_rasterization(state, args, variant);
 	}});
+	suites.push_back({ "fill-16-interlace", [](ReplayerState &state, const Arguments &args) -> bool {
+		RasterizationTestVariant variant = {};
+		variant.cycle_type = CycleType::Fill;
+		variant.fb_size = TextureSize::Bpp16;
+		variant.interlace = true;
+		return run_conformance_rasterization(state, args, variant);
+	}});
 	suites.push_back({ "fill-16-ia", [](ReplayerState &state, const Arguments &args) -> bool {
 		RasterizationTestVariant variant = {};
 		variant.cycle_type = CycleType::Fill;

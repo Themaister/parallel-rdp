@@ -71,6 +71,7 @@ endfunction()
 
 add_rdp_test(fill-8)
 add_rdp_test(fill-16)
+add_rdp_test(fill-16-interlace)
 add_rdp_test(fill-16-ia)
 add_rdp_test(fill-32)
 

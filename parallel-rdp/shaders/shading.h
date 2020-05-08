@@ -37,6 +37,8 @@ bool shade_pixel(int x, int y, uint primitive_index, out ShadedData shaded)
 		return false;
 
 	SpanSetup span_setup = load_span_setup(span_offsets.offset + (y - span_offsets.ylo));
+	if (span_setup.valid_line == U16_C(0))
+		return false;
 
 	uint setup_flags = uint(triangle_setup.elems[primitive_index].flags);
 	uint setup_tile = uint(triangle_setup.elems[primitive_index].tile);
@@ -114,7 +116,7 @@ bool shade_pixel(int x, int y, uint primitive_index, out ShadedData shaded)
 
 	if (copy_en)
 	{
-		bool valid = span_setup.valid_line != U16_C(0) && x >= span_setup.start_x && x <= span_setup.end_x;
+		bool valid = x >= span_setup.start_x && x <= span_setup.end_x;
 		if (!valid)
 			return false;
 
@@ -144,7 +146,7 @@ bool shade_pixel(int x, int y, uint primitive_index, out ShadedData shaded)
 	else if (fill_en)
 	{
 		shaded.coverage_count = U8_C(COVERAGE_FILL_BIT);
-		return span_setup.valid_line != U16_C(0) && x >= span_setup.start_x && x <= span_setup.end_x;
+		return x >= span_setup.start_x && x <= span_setup.end_x;
 	}
 
 	int coverage = compute_coverage(span_setup.xleft, span_setup.xright, x);
@@ -161,10 +163,6 @@ bool shade_pixel(int x, int y, uint primitive_index, out ShadedData shaded)
 		return false;
 
 	DerivedSetup derived = load_derived_setup(primitive_index);
-
-	if (interlace_en)
-		if ((y & 1) != int(bool(static_state_flags & RASTERIZATION_INTERLACE_KEEP_ODD_BIT)))
-			return false;
 
 	int dx = x - span_setup.interpolation_base_x;
 	int interpolation_direction = flip ? 1 : -1;
