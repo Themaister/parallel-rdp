@@ -42,7 +42,8 @@ DerivedSetup load_derived_setup(uint index)
 			uint(derived_setup.elems[index].fill_color),
 			u16(derived_setup.elems[index].dz),
 			u8(derived_setup.elems[index].dz_compressed),
-			u8(derived_setup.elems[index].min_lod));
+			u8(derived_setup.elems[index].min_lod),
+			i16x4(derived_setup.elems[index].factors));
 #endif
 }
 

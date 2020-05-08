@@ -144,14 +144,6 @@ void CommandProcessor::op_sync_full(const uint32_t *)
 	renderer.flush();
 }
 
-template <int bits>
-static int32_t sext(int32_t v)
-{
-	struct { int32_t dummy : bits; } d;
-	d.dummy = v;
-	return d.dummy;
-}
-
 static void decode_triangle_setup(TriangleSetup &setup, const uint32_t *words, bool copy_cycle)
 {
 	bool flip = (words[0] & 0x800000u) != 0;
@@ -362,6 +354,8 @@ void CommandProcessor::op_set_other_modes(const uint32_t *words)
 	STATE_MASK(static_state.flags, bool(words[0] & (1 << 14)), RASTERIZATION_TLUT_TYPE_BIT);
 	STATE_MASK(static_state.flags, bool(words[0] & (1 << 13)), RASTERIZATION_SAMPLE_MODE_BIT);
 	STATE_MASK(static_state.flags, bool(words[0] & (1 << 12)), RASTERIZATION_SAMPLE_MID_TEXEL_BIT);
+	STATE_MASK(static_state.flags, bool(words[0] & (1 << 11)), RASTERIZATION_BILERP_0_BIT);
+	STATE_MASK(static_state.flags, bool(words[0] & (1 << 10)), RASTERIZATION_BILERP_1_BIT);
 	STATE_MASK(static_state.flags, bool(words[0] & (1 << 9)), RASTERIZATION_CONVERT_ONE_BIT);
 	STATE_MASK(depth_blend.flags, bool(words[1] & (1 << 14)), DEPTH_BLEND_FORCE_BLEND_BIT);
 	STATE_MASK(static_state.flags, bool(words[1] & (1 << 13)), RASTERIZATION_ALPHA_CVG_SELECT_BIT);

@@ -54,6 +54,8 @@ const int RASTERIZATION_USES_TEXEL1_BIT = 1 << 19;
 const int RASTERIZATION_USES_LOD_BIT = 1 << 20;
 const int RASTERIZATION_USES_PIPELINED_TEXEL1_BIT = 1 << 21;
 const int RASTERIZATION_CONVERT_ONE_BIT = 1 << 22;
+const int RASTERIZATION_BILERP_0_BIT = 1 << 23;
+const int RASTERIZATION_BILERP_1_BIT = 1 << 24;
 
 const int RASTERIZATION_NEED_NOISE_BIT = 1 << 28;
 const int RASTERIZATION_USE_STATIC_TEXTURE_SIZE_FORMAT_BIT = 1 << 29;
@@ -170,6 +172,8 @@ struct DerivedSetupMem
 	mem_u16 dz;
 	mem_u8 dz_compressed;
 	mem_u8 min_lod;
+
+	mem_i16x4 factors;
 };
 
 #if SMALL_TYPES
@@ -194,6 +198,8 @@ struct DerivedSetup
 	u16 dz;
 	u8 dz_compressed;
 	u8 min_lod;
+
+	i16x4 factors;
 };
 #endif
 

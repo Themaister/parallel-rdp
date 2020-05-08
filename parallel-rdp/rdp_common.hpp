@@ -385,4 +385,12 @@ static inline uint32_t make_default_h_start()
 {
 	return make_vi_start_register(VI_H_OFFSET_NTSC, VI_H_OFFSET_NTSC + 640);
 }
+
+template <int bits>
+static int32_t sext(int32_t v)
+{
+	struct { int32_t dummy : bits; } d;
+	d.dummy = v;
+	return d.dummy;
+}
 }

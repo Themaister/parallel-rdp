@@ -779,6 +779,9 @@ DerivedSetup Renderer::build_derived_attributes(const AttributeSetup &attr) cons
 	setup.fill_color = constants.fill_color;
 	setup.min_lod = constants.min_level;
 
+	for (unsigned i = 0; i < 4; i++)
+		setup.convert_factors[i] = int16_t(sext<9>(constants.convert[i]) * 2 + 1);
+
 	return setup;
 }
 
@@ -1114,6 +1117,9 @@ StaticRasterizationState Renderer::normalize_static_state(StaticRasterizationSta
 		state.texture_size = siz;
 		return state;
 	}
+
+	if ((state.flags & RASTERIZATION_MULTI_CYCLE_BIT) == 0)
+		state.flags &= ~(RASTERIZATION_BILERP_1_BIT | RASTERIZATION_CONVERT_ONE_BIT);
 
 	normalize_combiner(state.combiner[0]);
 	normalize_combiner(state.combiner[1]);

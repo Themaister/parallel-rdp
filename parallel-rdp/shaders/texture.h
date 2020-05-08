@@ -825,4 +825,15 @@ void compute_lod_2cycle(inout uint tile0, inout uint tile1, out i16 lod_frac, ui
 	}
 }
 
+i16x4 texture_convert_factors(i16x4 texel_in, i16x4 factors)
+{
+	ivec4 texel = bitfieldExtract(ivec4(texel_in), 0, 9);
+
+	int r = texel.b + ((factors.x * texel.g + 0x80) >> 8);
+	int g = texel.b + ((factors.y * texel.r + factors.z * texel.g + 0x80) >> 8);
+	int b = texel.b + ((factors.w * texel.r + 0x80) >> 8);
+	int a = texel.b;
+	return i16x4(r, g, b, a);
+}
+
 #endif

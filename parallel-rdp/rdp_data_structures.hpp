@@ -63,6 +63,8 @@ enum StaticRasterizationFlagBits
 	RASTERIZATION_USES_LOD_BIT = 1 << 20,
 	RASTERIZATION_USES_PIPELINED_TEXEL1_BIT = 1 << 21,
 	RASTERIZATION_CONVERT_ONE_BIT = 1 << 22,
+	RASTERIZATION_BILERP_0_BIT = 1 << 23,
+	RASTERIZATION_BILERP_1_BIT = 1 << 24,
 
 	RASTERIZATION_NEED_NOISE_BIT = 1 << 28,
 	RASTERIZATION_USE_STATIC_TEXTURE_SIZE_FORMAT_BIT = 1 << 29,
@@ -125,11 +127,12 @@ struct DerivedSetup
 	uint16_t dz;
 	uint8_t dz_compressed;
 	uint8_t min_lod;
+	int16_t convert_factors[4];
 };
 
 static_assert((sizeof(TriangleSetup) & 15) == 0, "TriangleSetup must be aligned to 16 bytes.");
 static_assert((sizeof(AttributeSetup) & 15) == 0, "AttributeSetup must be aligned to 16 bytes.");
-static_assert(sizeof(DerivedSetup) == 48, "DerivedSetup is not 48 bytes.");
+static_assert(sizeof(DerivedSetup) == 56, "DerivedSetup is not 56 bytes.");
 
 struct ScissorState
 {

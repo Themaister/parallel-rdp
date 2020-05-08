@@ -252,8 +252,10 @@ void CommandBuilder::flush_default_state()
 		cmd[0] |= 1 << 13;
 	if (other_modes.mid_texel)
 		cmd[0] |= 1 << 12;
-	cmd[0] |= 1 << 11; // bilerp0
-	cmd[0] |= 1 << 10; // bilerp1
+	if (other_modes.bilerps[0])
+		cmd[0] |= 1 << 11;
+	if (other_modes.bilerps[1])
+		cmd[0] |= 1 << 10;
 	if (other_modes.convert_one)
 		cmd[0] |= 1 << 9;
 	cmd[0] |= uint32_t(other_modes.rgb_dither) << 6;
@@ -755,5 +757,11 @@ void CommandBuilder::set_enable_mid_texel(bool enable)
 void CommandBuilder::set_enable_convert_one(bool enable)
 {
 	other_modes.convert_one = enable;
+}
+
+void CommandBuilder::set_enable_bilerp_cycle(unsigned cycle, bool enable)
+{
+	assert(cycle < 2);
+	other_modes.bilerps[cycle] = enable;
 }
 }

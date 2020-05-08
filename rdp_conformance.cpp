@@ -126,6 +126,7 @@ struct RasterizationTestVariant
 	bool tlut_type;
 	bool mid_texel;
 	bool convert_one;
+	bool bilerp1 = true;
 	RGBDitherMode dither = RGBDitherMode::Off;
 	AlphaDitherMode alpha_dither = AlphaDitherMode::Off;
 	TextureFormat texture_format = TextureFormat::RGBA;
@@ -341,6 +342,7 @@ static bool run_conformance_rasterization(ReplayerState &state, const Arguments 
 	state.builder.set_enable_primitive_depth(variant.prim_depth);
 	state.builder.set_enable_mid_texel(variant.mid_texel);
 	state.builder.set_enable_convert_one(variant.convert_one);
+	state.builder.set_enable_bilerp_cycle(1, variant.bilerp1);
 
 	for (unsigned i = 0; i <= args.hi; i++)
 	{
@@ -397,7 +399,10 @@ static bool run_conformance_rasterization(ReplayerState &state, const Arguments 
 					rng.rnd() & 0xff,
 					rng.rnd() & 0xff,
 					rng.rnd() & 0xff);
+		}
 
+		if (variant.combiner_inputs || variant.convert_one)
+		{
 			state.builder.set_convert(
 					uint16_t(rng.rnd()),
 					uint16_t(rng.rnd()),
@@ -1346,6 +1351,18 @@ static int main_inner(int argc, char **argv)
 		variant.texture_format = TextureFormat::RGBA;
 		variant.cycle_type = CycleType::Cycle2;
 		variant.convert_one = true;
+		return run_conformance_rasterization(state, args, variant);
+	}});
+
+	suites.push_back({ "interpolation-color-texture-2cycle-convert-factors", [](ReplayerState &state, const Arguments &args) -> bool {
+		RasterizationTestVariant variant = {};
+		variant.color = true;
+		variant.texture = true;
+		variant.texture_size = TextureSize::Bpp16;
+		variant.texture_format = TextureFormat::RGBA;
+		variant.cycle_type = CycleType::Cycle2;
+		variant.convert_one = true;
+		variant.bilerp1 = false;
 		return run_conformance_rasterization(state, args, variant);
 	}});
 

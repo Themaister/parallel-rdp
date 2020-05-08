@@ -105,6 +105,7 @@ bool shade_pixel(int x, int y, uint primitive_index, out ShadedData shaded)
 	bool uses_pipelined_texel1 = (static_state_flags & RASTERIZATION_USES_PIPELINED_TEXEL1_BIT) != 0;
 	bool uses_lod = (static_state_flags & RASTERIZATION_USES_LOD_BIT) != 0;
 	bool convert_one = (static_state_flags & RASTERIZATION_CONVERT_ONE_BIT) != 0;
+	bool bilerp1 = (static_state_flags & RASTERIZATION_BILERP_1_BIT) != 0;
 
 	if ((static_state_flags & RASTERIZATION_NEED_NOISE_BIT) != 0)
 		reseed_noise(x, y, primitive_index + global_constants.fb_info.base_primitive_index);
@@ -236,17 +237,24 @@ bool shade_pixel(int x, int y, uint primitive_index, out ShadedData shaded)
 
 	if (uses_texel1)
 	{
-		uint tile_info_index1 = uint(state_indices.elems[primitive_index].tile_infos[tile1]);
-		TileInfo tile_info1 = load_tile_info(tile_info_index1);
-#ifdef RASTERIZER_SPEC_CONSTANT
-		if ((STATIC_STATE_FLAGS & RASTERIZATION_USE_STATIC_TEXTURE_SIZE_FORMAT_BIT) != 0)
+		if (convert_one && !bilerp1)
 		{
-			tile_info1.fmt = u8(TEX_FMT);
-			tile_info1.size = u8(TEX_SIZE);
+			texel1 = texture_convert_factors(texel0, derived.factors);
 		}
+		else
+		{
+			uint tile_info_index1 = uint(state_indices.elems[primitive_index].tile_infos[tile1]);
+			TileInfo tile_info1 = load_tile_info(tile_info_index1);
+#ifdef RASTERIZER_SPEC_CONSTANT
+			if ((STATIC_STATE_FLAGS & RASTERIZATION_USE_STATIC_TEXTURE_SIZE_FORMAT_BIT) != 0)
+			{
+				tile_info1.fmt = u8(TEX_FMT);
+				tile_info1.size = u8(TEX_SIZE);
+			}
 #endif
-		texel1 = sample_texture(tile_info1, tmem_instance_index, st, tlut, tlut_type, sample_quad, mid_texel,
-		                        convert_one && multi_cycle, texel0);
+			texel1 = sample_texture(tile_info1, tmem_instance_index, st, tlut, tlut_type, sample_quad, mid_texel,
+			                        convert_one, texel0);
+		}
 	}
 
 	int rgb_dith, alpha_dith;
