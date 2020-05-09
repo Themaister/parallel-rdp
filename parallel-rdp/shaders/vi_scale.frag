@@ -40,6 +40,10 @@ layout(push_constant, std430) uniform Registers
     int x_add;
     int y_add;
     int frame_count;
+
+    int serrate_shift;
+    int serrate_mask;
+    int serrate_select;
 } registers;
 
 uvec3 vi_lerp(uvec3 a, uvec3 b, uint l)
@@ -73,6 +77,10 @@ layout(constant_id = 2) const bool FETCH_BUG = false;
 void main()
 {
     ivec2 coord = ivec2(gl_FragCoord.xy) - ivec2(registers.h_base, registers.v_base);
+
+    if ((coord.y & registers.serrate_mask) != registers.serrate_select)
+        discard;
+    coord.y >>= registers.serrate_shift;
 
     if (GAMMA_DITHER)
         reseed_noise(coord.x, coord.y, registers.frame_count);

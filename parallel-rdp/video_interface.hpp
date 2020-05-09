@@ -60,6 +60,7 @@ private:
 	             uint32_t x, uint32_t y, uint32_t z,
 	             uint32_t num_words, const Vulkan::DebugChannelInterface::Word *words) override;
 
+	// Frame state.
 	uint32_t frame_count = 0;
 	Vulkan::ImageHandle prev_scanout_image;
 };

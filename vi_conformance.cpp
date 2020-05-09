@@ -62,6 +62,7 @@ struct VITestVariant
 	bool dither_filter = false;
 	bool gamma = false;
 	bool gamma_dither = false;
+	bool serrate = false;
 };
 
 static bool run_conformance_vi(ReplayerState &state, const Arguments &args, const VITestVariant &variant)
@@ -72,11 +73,11 @@ static bool run_conformance_vi(ReplayerState &state, const Arguments &args, cons
 	                                (variant.divot ? VI_CONTROL_DIVOT_ENABLE_BIT : 0) |
 	                                (variant.dither_filter ? VI_CONTROL_DITHER_FILTER_ENABLE_BIT : 0) |
 	                                (variant.gamma ? VI_CONTROL_GAMMA_ENABLE_BIT : 0) |
-	                                (variant.gamma_dither ? VI_CONTROL_GAMMA_DITHER_ENABLE_BIT : 0));
+	                                (variant.gamma_dither ? VI_CONTROL_GAMMA_DITHER_ENABLE_BIT : 0) |
+	                                (variant.serrate ? VI_CONTROL_SERRATE_BIT : 0));
 
 	state.combined->set_vi_register(VIRegister::Origin, 567123);
 	state.combined->set_vi_register(VIRegister::Width, 100);
-	state.combined->set_vi_register(VIRegister::VCurrentLine, 0);
 	state.combined->set_vi_register(VIRegister::VSync, variant.pal ? VI_V_SYNC_PAL : VI_V_SYNC_NTSC);
 	state.combined->set_vi_register(VIRegister::HStart,
 	                                make_vi_start_register(variant.pal ? VI_H_OFFSET_PAL : VI_H_OFFSET_NTSC,
@@ -91,6 +92,7 @@ static bool run_conformance_vi(ReplayerState &state, const Arguments &args, cons
 	for (unsigned i = 0; i <= args.hi; i++)
 	{
 		randomize_rdram(rng, *state.reference, *state.gpu);
+		state.combined->set_vi_register(VIRegister::VCurrentLine, uint32_t(variant.serrate) & (i & 1u));
 
 		if (variant.randomize_scale_bias)
 		{
@@ -263,7 +265,6 @@ static int main_inner(int argc, char **argv)
 		return run_conformance_vi(state, args, variant);
 	}});
 
-	// Cannot pass yet.
 	suites.push_back({ "aa-none-randomize-hv-start-end", [](ReplayerState &state, const Arguments &args) -> bool {
 		VITestVariant variant = {};
 		variant.randomize_start = true;
@@ -278,6 +279,13 @@ static int main_inner(int argc, char **argv)
 		variant.randomize_scale_bias = true;
 		variant.aa = VI_CONTROL_AA_MODE_RESAMP_ONLY_BIT;
 		variant.pal = true;
+		return run_conformance_vi(state, args, variant);
+	}});
+
+	suites.push_back({ "aa-none-serrate", [](ReplayerState &state, const Arguments &args) -> bool {
+		VITestVariant variant = {};
+		variant.aa = VI_CONTROL_AA_MODE_RESAMP_ONLY_BIT;
+		variant.serrate = true;
 		return run_conformance_vi(state, args, variant);
 	}});
 

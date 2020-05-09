@@ -166,6 +166,7 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout)
 	previous_frame_blank = is_blank;
 
 	bool serrate = (status & VI_CONTROL_SERRATE_BIT) != 0;
+	bool field_state = v_current_line == 0;
 
 	bool is_pal = unsigned(v_sync) > (VI_V_SYNC_NTSC + 25);
 	h_start -= is_pal ? VI_H_OFFSET_PAL : VI_H_OFFSET_NTSC;
@@ -173,9 +174,11 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout)
 	int v_start_offset = is_pal ? VI_V_OFFSET_PAL : VI_V_OFFSET_NTSC;
 	v_start = (v_start - v_start_offset) / 2;
 
+#if 0
 	int v_active_lines = v_sync - v_start_offset;
 	if (v_active_lines >= 0)
 		v_active_lines >>= int(!serrate);
+#endif
 
 	bool divot = (status & VI_CONTROL_DIVOT_ENABLE_BIT) != 0;
 
@@ -472,7 +475,7 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout)
 	Vulkan::ImageHandle scale_image;
 	{
 		Vulkan::ImageCreateInfo rt_info = Vulkan::ImageCreateInfo::render_target(
-				640, (is_pal ? VI_V_RES_PAL: VI_V_RES_NTSC) >> 1, VK_FORMAT_R8G8B8A8_UNORM);
+				640, (is_pal ? VI_V_RES_PAL: VI_V_RES_NTSC) >> int(!serrate), VK_FORMAT_R8G8B8A8_UNORM);
 		rt_info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 		rt_info.initial_layout = VK_IMAGE_LAYOUT_UNDEFINED;
 		rt_info.misc = Vulkan::IMAGE_MISC_MUTABLE_SRGB_BIT;
@@ -512,7 +515,21 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout)
 			uint32_t x_add;
 			uint32_t y_add;
 			uint32_t frame_count;
+
+			uint32_t serrate_shift;
+			uint32_t serrate_mask;
+			uint32_t serrate_select;
 		} push = {};
+
+		if (serrate)
+		{
+			v_start *= 2;
+			v_res *= 2;
+			push.serrate_shift = 1;
+			push.serrate_mask = 1;
+			push.serrate_select = int(field_state);
+		}
+
 		push.x_offset = x_start;
 		push.y_offset = y_start;
 		push.h_offset = h_start;
