@@ -28,6 +28,11 @@
 
 namespace RDP
 {
+struct ScanoutOptions
+{
+	bool crop_overscan = false;
+};
+
 class VideoInterface : public Vulkan::DebugChannelInterface
 {
 public:
@@ -38,7 +43,8 @@ public:
 	void set_hidden_rdram(const Vulkan::Buffer *hidden_rdram);
 
 	int resolve_shader_define(const char *name, const char *define) const;
-	Vulkan::ImageHandle scanout(VkImageLayout target_layout);
+
+	Vulkan::ImageHandle scanout(VkImageLayout target_layout, const ScanoutOptions &options = {});
 	void set_shader_bank(const ShaderBank *bank);
 
 private:
@@ -63,5 +69,6 @@ private:
 	// Frame state.
 	uint32_t frame_count = 0;
 	Vulkan::ImageHandle prev_scanout_image;
+	VkImageLayout prev_image_layout = VK_IMAGE_LAYOUT_UNDEFINED;
 };
 }

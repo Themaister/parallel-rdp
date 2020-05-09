@@ -119,7 +119,7 @@ void VideoInterface::set_shader_bank(const ShaderBank *bank)
 	shader_bank = bank;
 }
 
-Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout)
+Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const ScanoutOptions &options)
 {
 	Vulkan::ImageHandle scanout;
 
@@ -471,6 +471,9 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout)
 	else
 		divot_image = std::move(aa_image);
 
+	VkRect2D crop_rect = {};
+	bool can_crop = false;
+
 	// Scale pass
 	Vulkan::ImageHandle scale_image;
 	{
@@ -492,7 +495,7 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout)
 		                   VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0,
 		                   VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT);
 
-		if (prev_scanout_image && target_layout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+		if (prev_scanout_image && prev_image_layout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
 		{
 			cmd->image_barrier(*prev_scanout_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 			                   VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
@@ -567,6 +570,12 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout)
 			cmd->set_texture(0, 0, divot_image->get_view());
 			cmd->set_scissor({{ h_start, v_start }, { uint32_t(h_res), uint32_t(v_res) }});
 			cmd->draw(3);
+
+			can_crop = true;
+			crop_rect.offset.x = h_start;
+			crop_rect.offset.y = v_start;
+			crop_rect.extent.width = h_res;
+			crop_rect.extent.height = v_res;
 		}
 
 		// To deal with interlacing and other "persistence effects", we blend in previous frame's result.
@@ -625,26 +634,77 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout)
 		cmd->end_render_pass();
 	}
 
-	if (target_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+	// Need separate copy pass so we can keep a full reference frame around for interlacing, etc.
+	// TODO: Figure out if we can optimize this safely.
+	if (options.crop_overscan && can_crop)
 	{
-		cmd->image_barrier(*scale_image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-		                   VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-		                   VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
-	}
-	else if (target_layout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL)
-	{
-		cmd->image_barrier(*scale_image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+		prev_image_layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+		prev_scanout_image = scale_image;
+
+		cmd->image_barrier(*prev_scanout_image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+		                   VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
 		                   VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
 		                   VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT);
+
+		Vulkan::ImageCreateInfo rt_info = Vulkan::ImageCreateInfo::render_target(
+				crop_rect.extent.width, crop_rect.extent.height, VK_FORMAT_R8G8B8A8_UNORM);
+		rt_info.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+		rt_info.initial_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+		rt_info.misc = Vulkan::IMAGE_MISC_MUTABLE_SRGB_BIT;
+		scale_image = device->create_image(rt_info);
+
+		cmd->image_barrier(*scale_image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		                   VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0,
+		                   VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT);
+
+		cmd->copy_image(*scale_image, *prev_scanout_image, {}, { crop_rect.offset.x, crop_rect.offset.y, 0 },
+		                { crop_rect.extent.width, crop_rect.extent.height, 1 },
+		                { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 },
+		                { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 });
+
+		if (target_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+		{
+			cmd->image_barrier(*scale_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, target_layout,
+			                   VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+			                   VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
+		}
+		else if (target_layout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL)
+		{
+			cmd->image_barrier(*scale_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, target_layout,
+			                   VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+			                   VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT);
+		}
+		else
+		{
+			LOGE("Unexpected output layout in VI scanout!\n");
+		}
 	}
 	else
 	{
-		LOGE("Unexpected output layout in VI scanout!\n");
+		if (target_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+		{
+			cmd->image_barrier(*scale_image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+			                   target_layout,
+			                   VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+			                   VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
+		}
+		else if (target_layout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL)
+		{
+			cmd->image_barrier(*scale_image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+			                   target_layout,
+			                   VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+			                   VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT);
+		}
+		else
+		{
+			LOGE("Unexpected output layout in VI scanout!\n");
+		}
+		prev_image_layout = target_layout;
+		prev_scanout_image = scanout;
 	}
 
 	device->submit(cmd);
 	scanout = std::move(scale_image);
-	prev_scanout_image = scanout;
 	frame_count++;
 	return scanout;
 }
