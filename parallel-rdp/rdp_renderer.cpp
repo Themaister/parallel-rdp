@@ -1306,6 +1306,7 @@ bool Renderer::need_flush() const
 	bool max_shaded_tiles =
 			(stream.max_shaded_tiles + ImplementationConstants::MaxTilesX * ImplementationConstants::MaxTilesY > Limits::MaxTileInstances);
 
+#ifdef VULKAN_DEBUG
 	if (cache_full)
 		LOGI("Cache is full.\n");
 	if (triangle_full)
@@ -1314,6 +1315,7 @@ bool Renderer::need_flush() const
 		LOGI("Span info is full.\n");
 	if (max_shaded_tiles)
 		LOGI("Shaded tiles is full.\n");
+#endif
 
 	return cache_full || triangle_full || span_info_full || max_shaded_tiles;
 }
