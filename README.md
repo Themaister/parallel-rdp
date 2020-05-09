@@ -35,9 +35,8 @@ Ticking the last boxes depends mostly on real content making use of said feature
 
 - YUV textures in general
 - Color combiner chroma keying
-- Texture cycle convert ops (YUV again)
 - Various "bugs" / questionable behavior that seems meaningless to emulate
-- Certain extreme edge cases in TMEM upload
+- Certain extreme edge cases in TMEM upload. The implementation has tests for many "crazy" edge cases though.
 - ... possibly other features
 
 The VI is essentially complete. A fancy deinterlacer might be useful to add since we have plenty of GPU cycles to spare in the graphics queue.
