@@ -2166,7 +2166,10 @@ void Renderer::load_tile_iteration(uint32_t tile, const LoadTileInfo &info, uint
 		// Even if there are inaccuracies in the fraction, we always floor it to get T, and thus we'll have to run
 		// for quite some time to observe the fractional error accumulate.
 
-		unsigned pixel_count = info.shi - info.slo + 1;
+		unsigned pixel_count = (info.shi - info.slo + 1) & 0xfff;
+		if (!pixel_count)
+			return;
+
 		unsigned dt = info.thi;
 
 		unsigned max_tmem_iteration = (pixel_count - 1) >> (4u - unsigned(info.size));
@@ -2282,6 +2285,10 @@ void Renderer::load_tile_iteration(uint32_t tile, const LoadTileInfo &info, uint
 		upload.width = ((info.shi >> 2) - (info.slo >> 2)) + 1;
 		upload.height = ((info.thi >> 2) - (info.tlo >> 2)) + 1;
 	}
+
+	upload.width &= 0xfff;
+	if (!upload.width)
+		return;
 
 	switch (info.size)
 	{
