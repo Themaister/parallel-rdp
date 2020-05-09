@@ -839,11 +839,11 @@ void CommandProcessor::wait_for_timeline(uint64_t index)
 	});
 }
 
-Vulkan::ImageHandle CommandProcessor::scanout()
+Vulkan::ImageHandle CommandProcessor::scanout(const ScanoutOptions &opts)
 {
 	ring.drain();
 	renderer.flush();
-	auto scanout = vi.scanout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+	auto scanout = vi.scanout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, opts);
 	return scanout;
 }
 

@@ -84,7 +84,7 @@ public:
 	// Sets VI register
 	void set_vi_register(VIRegister reg, uint32_t value);
 
-	Vulkan::ImageHandle scanout();
+	Vulkan::ImageHandle scanout(const ScanoutOptions &opts = {});
 	void scanout_sync(std::vector<RGBA> &colors, unsigned &width, unsigned &height);
 
 private:

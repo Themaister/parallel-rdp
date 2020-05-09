@@ -119,6 +119,46 @@ void VideoInterface::set_shader_bank(const ShaderBank *bank)
 	shader_bank = bank;
 }
 
+static VkPipelineStageFlagBits layout_to_stage(VkImageLayout layout)
+{
+	switch (layout)
+	{
+	case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
+	case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
+		return VK_PIPELINE_STAGE_TRANSFER_BIT;
+
+	case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
+		return VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+
+	case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
+		return VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+
+	default:
+		return VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+	}
+}
+
+static VkAccessFlags layout_to_access(VkImageLayout layout)
+{
+	switch (layout)
+	{
+	case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
+		return VK_ACCESS_TRANSFER_READ_BIT;
+
+	case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
+		return VK_ACCESS_TRANSFER_WRITE_BIT;
+
+	case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
+		return VK_ACCESS_SHADER_READ_BIT;
+
+	case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
+		return VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+	default:
+		return 0;
+	}
+}
+
 Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const ScanoutOptions &options)
 {
 	Vulkan::ImageHandle scanout;
@@ -208,6 +248,22 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const S
 	if (h_res <= 0 || h_start >= 640)
 	{
 		frame_count++;
+
+		if (options.persist_frame_on_invalid_input)
+		{
+			scanout = prev_scanout_image;
+
+			if (scanout && prev_image_layout != target_layout)
+			{
+				auto cmd = device->request_command_buffer();
+				cmd->image_barrier(*scanout, prev_image_layout, target_layout,
+				                   layout_to_stage(prev_image_layout), 0,
+				                   layout_to_stage(target_layout), layout_to_access(target_layout));
+				prev_image_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+				device->submit(cmd);
+			}
+		}
+
 		prev_scanout_image.reset();
 		return scanout;
 	}
@@ -634,6 +690,8 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const S
 		cmd->end_render_pass();
 	}
 
+	VkImageLayout src_layout;
+
 	// Need separate copy pass so we can keep a full reference frame around for interlacing, etc.
 	// TODO: Figure out if we can optimize this safely.
 	if (options.crop_overscan && can_crop)
@@ -662,46 +720,18 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const S
 		                { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 },
 		                { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 });
 
-		if (target_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
-		{
-			cmd->image_barrier(*scale_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, target_layout,
-			                   VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
-			                   VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
-		}
-		else if (target_layout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL)
-		{
-			cmd->image_barrier(*scale_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, target_layout,
-			                   VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
-			                   VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT);
-		}
-		else
-		{
-			LOGE("Unexpected output layout in VI scanout!\n");
-		}
+		src_layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
 	}
 	else
 	{
-		if (target_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
-		{
-			cmd->image_barrier(*scale_image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-			                   target_layout,
-			                   VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-			                   VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
-		}
-		else if (target_layout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL)
-		{
-			cmd->image_barrier(*scale_image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-			                   target_layout,
-			                   VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-			                   VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT);
-		}
-		else
-		{
-			LOGE("Unexpected output layout in VI scanout!\n");
-		}
+		src_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 		prev_image_layout = target_layout;
-		prev_scanout_image = scanout;
+		prev_scanout_image = scale_image;
 	}
+
+	cmd->image_barrier(*scale_image, src_layout, target_layout,
+	                   layout_to_stage(src_layout), layout_to_access(src_layout),
+	                   layout_to_stage(target_layout), layout_to_access(target_layout));
 
 	device->submit(cmd);
 	scanout = std::move(scale_image);

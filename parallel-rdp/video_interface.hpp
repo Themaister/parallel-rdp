@@ -31,6 +31,7 @@ namespace RDP
 struct ScanoutOptions
 {
 	bool crop_overscan = false;
+	bool persist_frame_on_invalid_input = false;
 };
 
 class VideoInterface : public Vulkan::DebugChannelInterface
