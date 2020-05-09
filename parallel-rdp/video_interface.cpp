@@ -259,12 +259,13 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const S
 				cmd->image_barrier(*scanout, prev_image_layout, target_layout,
 				                   layout_to_stage(prev_image_layout), 0,
 				                   layout_to_stage(target_layout), layout_to_access(target_layout));
-				prev_image_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+				prev_image_layout = target_layout;
 				device->submit(cmd);
 			}
 		}
+		else
+			prev_scanout_image.reset();
 
-		prev_scanout_image.reset();
 		return scanout;
 	}
 
