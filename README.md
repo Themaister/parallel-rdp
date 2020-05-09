@@ -40,10 +40,8 @@ Ticking the last boxes depends mostly on real content making use of said feature
 - Certain extreme edge cases in TMEM upload
 - ... possibly other features
 
-The VI is essentially complete, but the missing piece is currently interlacing.
-Games which use interlacing work, but might look a bit weird.
-
-Otherwise, the VI filtering is always turned on if game requests it.
+The VI is essentially complete. A fancy deinterlacer might be useful to add since we have plenty of GPU cycles to spare in the graphics queue.
+The VI filtering is always turned on if game requests it.
 Some work to make VI output more configurable could be considered.
 
 ## Vulkan driver requirements
