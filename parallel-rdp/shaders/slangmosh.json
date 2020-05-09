@@ -93,6 +93,13 @@
 			]
 		},
 		{
+			"name": "vi_blend_fields",
+			"path": "vi_blend_fields.frag",
+			"variants": [
+				{ "define": "DEBUG_ENABLE", "count": 2, "resolve": true }
+			]
+		},
+		{
 			"name": "extract_vram",
 			"path": "extract_vram.comp",
 			"compute": true

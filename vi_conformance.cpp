@@ -263,7 +263,6 @@ static int main_inner(int argc, char **argv)
 		return run_conformance_vi(state, args, variant);
 	}});
 
-#if 0
 	// Cannot pass yet.
 	suites.push_back({ "aa-none-randomize-hv-start-end", [](ReplayerState &state, const Arguments &args) -> bool {
 		VITestVariant variant = {};
@@ -281,7 +280,6 @@ static int main_inner(int argc, char **argv)
 		variant.pal = true;
 		return run_conformance_vi(state, args, variant);
 	}});
-#endif
 
 	if (list_suites)
 	{

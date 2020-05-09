@@ -144,7 +144,10 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout)
 	int vi_offset = vi_registers[unsigned(VIRegister::Origin)] & 0xffffff;
 
 	if (vi_offset == 0)
+	{
+		prev_scanout_image.reset();
 		return scanout;
+	}
 
 	int status = vi_registers[unsigned(VIRegister::Control)];
 
@@ -152,8 +155,12 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout)
 	if (is_blank && previous_frame_blank)
 	{
 		frame_count++;
+		prev_scanout_image.reset();
 		return scanout;
 	}
+
+	if (is_blank)
+		prev_scanout_image.reset();
 
 	status |= VI_CONTROL_TYPE_RGBA5551_BIT;
 	previous_frame_blank = is_blank;
@@ -198,6 +205,7 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout)
 	if (h_res <= 0 || h_start >= 640)
 	{
 		frame_count++;
+		prev_scanout_image.reset();
 		return scanout;
 	}
 
@@ -472,6 +480,7 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout)
 
 		Vulkan::RenderPassInfo rp;
 		rp.color_attachments[0] = &scale_image->get_view();
+		memset(&rp.clear_color[0], 0, sizeof(rp.clear_color[0]));
 		rp.num_color_attachments = 1;
 		rp.clear_attachments = 1;
 		rp.store_attachments = 1;
@@ -479,6 +488,13 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout)
 		cmd->image_barrier(*scale_image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
 		                   VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0,
 		                   VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT);
+
+		if (prev_scanout_image && target_layout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+		{
+			cmd->image_barrier(*prev_scanout_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+			                   VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
+			                   VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
+		}
 
 		cmd->begin_render_pass(rp);
 
@@ -515,6 +531,9 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout)
 #endif
 		cmd->set_buffer_view(1, 0, *gamma_lut_view);
 
+		auto h_start_field = h_start;
+		auto h_res_field = h_res;
+
 		if (!left_clamp)
 		{
 			h_start += 8;
@@ -533,6 +552,59 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout)
 			cmd->draw(3);
 		}
 
+		// To deal with interlacing and other "persistence effects", we blend in previous frame's result.
+		// This is somewhat arbitrary, but seems to work well enough in practice.
+
+		if (prev_scanout_image)
+		{
+			cmd->set_blend_enable(true);
+			cmd->set_blend_factors(VK_BLEND_FACTOR_ONE_MINUS_DST_ALPHA, VK_BLEND_FACTOR_DST_ALPHA);
+			// Don't overwrite alpha, it's already zero.
+			cmd->set_color_write_mask(0x7);
+			cmd->set_specialization_constant_mask(0);
+			cmd->set_texture(0, 0, prev_scanout_image->get_view());
+#ifdef PARALLEL_RDP_SHADER_DIR
+			cmd->set_program("rdp://fullscreen.vert", "rdp://vi_blend_fields.frag", {
+					{ "DEBUG_ENABLE", debug_channel ? 1 : 0 },
+			});
+#else
+			cmd->set_program(device->request_program(shader_bank->fullscreen, shader_bank->vi_blend_fields));
+#endif
+
+			if (degenerate)
+			{
+				if (h_res_field > 0)
+				{
+					cmd->set_scissor({{ h_start_field, 0 }, { uint32_t(h_res_field), prev_scanout_image->get_height() }});
+					cmd->draw(3);
+				}
+			}
+			else
+			{
+				// Top part.
+				if (h_res_field > 0 && v_start > 0)
+				{
+					cmd->set_scissor({{ h_start_field, 0 }, { uint32_t(h_res_field), uint32_t(v_start) }});
+					cmd->draw(3);
+				}
+
+				// Middle part, don't overwrite the 8 pixel guard band.
+				if (h_res > 0 && v_res > 0)
+				{
+					cmd->set_scissor({{ h_start, v_start }, { uint32_t(h_res), uint32_t(v_res) }});
+					cmd->draw(3);
+				}
+
+				// Bottom part.
+				if (h_res_field > 0 && prev_scanout_image->get_height() > uint32_t(v_start + v_res))
+				{
+					cmd->set_scissor({{ h_start_field, v_start + v_res },
+					                  { uint32_t(h_res_field), prev_scanout_image->get_height() - uint32_t(v_start + v_res) }});
+					cmd->draw(3);
+				}
+			}
+		}
+
 		cmd->end_render_pass();
 	}
 
@@ -548,9 +620,14 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout)
 		                   VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
 		                   VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT);
 	}
+	else
+	{
+		LOGE("Unexpected output layout in VI scanout!\n");
+	}
 
 	device->submit(cmd);
 	scanout = std::move(scale_image);
+	prev_scanout_image = scanout;
 	frame_count++;
 	return scanout;
 }
