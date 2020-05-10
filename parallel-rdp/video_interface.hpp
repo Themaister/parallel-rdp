@@ -40,7 +40,7 @@ public:
 	void set_device(Vulkan::Device *device);
 	void set_vi_register(VIRegister reg, uint32_t value);
 
-	void set_rdram(const Vulkan::Buffer *rdram);
+	void set_rdram(const Vulkan::Buffer *rdram, size_t offset, size_t size);
 	void set_hidden_rdram(const Vulkan::Buffer *hidden_rdram);
 
 	int resolve_shader_define(const char *name, const char *define) const;
@@ -71,5 +71,8 @@ private:
 	uint32_t frame_count = 0;
 	Vulkan::ImageHandle prev_scanout_image;
 	VkImageLayout prev_image_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+	size_t rdram_offset = 0;
+	size_t rdram_size = 0;
 };
 }

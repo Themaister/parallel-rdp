@@ -104,9 +104,11 @@ void VideoInterface::set_vi_register(VIRegister reg, uint32_t value)
 	vi_registers[unsigned(reg)] = value;
 }
 
-void VideoInterface::set_rdram(const Vulkan::Buffer *rdram_)
+void VideoInterface::set_rdram(const Vulkan::Buffer *rdram_, size_t offset, size_t size)
 {
 	rdram = rdram_;
+	rdram_offset = offset;
+	rdram_size = size;
 }
 
 void VideoInterface::set_hidden_rdram(const Vulkan::Buffer *hidden_rdram_)
@@ -304,7 +306,7 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const S
 		async_cmd->set_program(shader_bank->extract_vram);
 #endif
 		async_cmd->set_storage_texture(0, 0, vram_image->get_view());
-		async_cmd->set_storage_buffer(0, 1, *rdram);
+		async_cmd->set_storage_buffer(0, 1, *rdram, rdram_offset, rdram_size);
 		async_cmd->set_storage_buffer(0, 2, *hidden_rdram);
 
 		struct Push
@@ -329,7 +331,7 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const S
 		push.y_res = aa_height;
 
 		async_cmd->set_specialization_constant_mask(3);
-		async_cmd->set_specialization_constant(0, uint32_t(rdram->get_create_info().size));
+		async_cmd->set_specialization_constant(0, uint32_t(rdram_size));
 		async_cmd->set_specialization_constant(1, status & (VI_CONTROL_TYPE_MASK | VI_CONTROL_AA_MODE_MASK));
 
 		async_cmd->push_constants(&push, 0, sizeof(push));
@@ -439,7 +441,7 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const S
 		cmd->push_constants(&push, 0, sizeof(push));
 
 		cmd->set_specialization_constant_mask(3);
-		cmd->set_specialization_constant(0, uint32_t(rdram->get_create_info().size));
+		cmd->set_specialization_constant(0, uint32_t(rdram_size));
 		cmd->set_specialization_constant(1,
 		                                 status & (VI_CONTROL_AA_MODE_MASK | VI_CONTROL_DITHER_FILTER_ENABLE_BIT));
 

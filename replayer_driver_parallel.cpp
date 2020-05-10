@@ -33,7 +33,7 @@ public:
 	                 ReplayerEventInterface &iface_)
 		: player(player_)
 		, iface(iface_)
-		, gpu(device, nullptr, player.get_rdram_size(), player.get_hidden_rdram_size(),
+		, gpu(device, nullptr, 0, player.get_rdram_size(), player.get_hidden_rdram_size(),
 			  COMMAND_PROCESSOR_FLAG_HOST_VISIBLE_HIDDEN_RDRAM_BIT | COMMAND_PROCESSOR_FLAG_HOST_VISIBLE_TMEM_BIT)
 	{
 	}

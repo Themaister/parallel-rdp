@@ -55,6 +55,7 @@ class CommandProcessor
 public:
 	CommandProcessor(Vulkan::Device &device,
 	                 void *rdram_ptr,
+	                 size_t rdram_offset,
 	                 size_t rdram_size,
 	                 size_t hidden_rdram_size,
 	                 CommandProcessorFlags flags);
@@ -92,6 +93,8 @@ private:
 	Vulkan::BufferHandle rdram;
 	Vulkan::BufferHandle hidden_rdram;
 	Vulkan::BufferHandle tmem;
+	size_t rdram_offset;
+	size_t rdram_size;
 #ifndef PARALLEL_RDP_SHADER_DIR
 	std::unique_ptr<ShaderBank> shader_bank;
 #endif

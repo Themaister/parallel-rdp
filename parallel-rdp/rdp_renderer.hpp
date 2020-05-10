@@ -68,7 +68,7 @@ class Renderer : public Vulkan::DebugChannelInterface
 public:
 	~Renderer();
 	bool set_device(Vulkan::Device *device);
-	void set_rdram(Vulkan::Buffer *buffer);
+	void set_rdram(Vulkan::Buffer *buffer, size_t offset, size_t size);
 	void set_hidden_rdram(Vulkan::Buffer *buffer);
 	void set_tmem(Vulkan::Buffer *buffer);
 	void set_shader_bank(const ShaderBank *bank);
@@ -105,6 +105,8 @@ public:
 private:
 	Vulkan::Device *device = nullptr;
 	Vulkan::Buffer *rdram = nullptr;
+	size_t rdram_offset = 0;
+	size_t rdram_size = 0;
 	Vulkan::Buffer *hidden_rdram = nullptr;
 	Vulkan::Buffer *tmem = nullptr;
 	const ShaderBank *shader_bank = nullptr;

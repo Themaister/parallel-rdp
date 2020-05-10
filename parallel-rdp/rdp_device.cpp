@@ -36,9 +36,10 @@ using namespace Vulkan;
 
 namespace RDP
 {
-CommandProcessor::CommandProcessor(Vulkan::Device &device_, void *rdram_ptr, size_t rdram_size, size_t hidden_rdram_size,
+CommandProcessor::CommandProcessor(Vulkan::Device &device_, void *rdram_ptr,
+                                   size_t rdram_offset_, size_t rdram_size_, size_t hidden_rdram_size,
                                    CommandProcessorFlags flags)
-	: device(device_), timeline_worker(FenceExecutor{&thread_timeline_value})
+	: device(device_), rdram_offset(rdram_offset_), rdram_size(rdram_size_), timeline_worker(FenceExecutor{&thread_timeline_value})
 {
 	BufferCreateInfo info = {};
 	info.size = rdram_size;
@@ -47,7 +48,20 @@ CommandProcessor::CommandProcessor(Vulkan::Device &device_, void *rdram_ptr, siz
 	info.misc = BUFFER_MISC_ZERO_INITIALIZE_BIT;
 
 	if (rdram_ptr)
-		rdram = device.create_imported_host_buffer(info, VK_EXTERNAL_MEMORY_HANDLE_TYPE_HOST_ALLOCATION_BIT_EXT, rdram_ptr);
+	{
+		if (device.get_device_features().supports_external_memory_host)
+		{
+			size_t import_size = rdram_size + rdram_offset;
+			size_t align = device.get_device_features().host_memory_properties.minImportedHostPointerAlignment;
+			import_size = (import_size + align - 1) & ~(align - 1);
+			info.size = import_size;
+			rdram = device.create_imported_host_buffer(info, VK_EXTERNAL_MEMORY_HANDLE_TYPE_HOST_ALLOCATION_BIT_EXT, rdram_ptr);
+		}
+		else
+		{
+			LOGE("VK_EXT_external_memory_host is not supported on this device.\n");
+		}
+	}
 	else
 		rdram = device.create_buffer(info);
 
@@ -91,12 +105,12 @@ void CommandProcessor::begin_frame_context()
 void CommandProcessor::init_renderer()
 {
 	renderer.set_device(&device);
-	renderer.set_rdram(rdram.get());
+	renderer.set_rdram(rdram.get(), rdram_offset, rdram_size);
 	renderer.set_hidden_rdram(hidden_rdram.get());
 	renderer.set_tmem(tmem.get());
 
 	vi.set_device(&device);
-	vi.set_rdram(rdram.get());
+	vi.set_rdram(rdram.get(), rdram_offset, rdram_size);
 	vi.set_hidden_rdram(hidden_rdram.get());
 
 #ifndef PARALLEL_RDP_SHADER_DIR
@@ -772,12 +786,16 @@ void CommandProcessor::set_vi_register(VIRegister reg, uint32_t value)
 
 void *CommandProcessor::begin_read_rdram()
 {
-	return device.map_host_buffer(*rdram, MEMORY_ACCESS_READ_BIT);
+	if (rdram)
+		return device.map_host_buffer(*rdram, MEMORY_ACCESS_READ_BIT);
+	else
+		return nullptr;
 }
 
 void CommandProcessor::end_write_rdram()
 {
-	device.unmap_host_buffer(*rdram, MEMORY_ACCESS_WRITE_BIT);
+	if (rdram)
+		device.unmap_host_buffer(*rdram, MEMORY_ACCESS_WRITE_BIT);
 }
 
 void *CommandProcessor::begin_read_hidden_rdram()

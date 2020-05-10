@@ -485,9 +485,11 @@ void Renderer::RenderBuffersUpdater::init(Vulkan::Device &device)
 	cpu.init(device, Vulkan::BufferDomain::Host, &gpu);
 }
 
-void Renderer::set_rdram(Vulkan::Buffer *buffer)
+void Renderer::set_rdram(Vulkan::Buffer *buffer, size_t offset, size_t size)
 {
 	rdram = buffer;
+	rdram_offset = offset;
+	rdram_size = size;
 	device->set_name(*rdram, "rdram");
 }
 
@@ -1366,7 +1368,7 @@ void Renderer::RenderBuffersUpdater::upload(Vulkan::Device &device, const Render
 
 void Renderer::update_tmem_instances(Vulkan::CommandBuffer &cmd)
 {
-	cmd.set_storage_buffer(0, 0, *rdram);
+	cmd.set_storage_buffer(0, 0, *rdram, rdram_offset, rdram_size);
 	cmd.set_storage_buffer(0, 1, *tmem);
 	cmd.set_storage_buffer(0, 2, *tmem_instances);
 
@@ -1798,7 +1800,7 @@ void Renderer::submit_render_pass()
 		auto &instance = buffer_instances[buffer_instance];
 
 		cmd->set_specialization_constant_mask(0x7f);
-		cmd->set_specialization_constant(0, uint32_t(rdram->get_create_info().size));
+		cmd->set_specialization_constant(0, uint32_t(rdram_size));
 		cmd->set_specialization_constant(1, uint32_t(fb.fmt));
 		cmd->set_specialization_constant(2, int(fb.addr == fb.depth_addr));
 		cmd->set_specialization_constant(3, ImplementationConstants::TileWidth);
@@ -1806,7 +1808,7 @@ void Renderer::submit_render_pass()
 		cmd->set_specialization_constant(5, Limits::MaxPrimitives);
 		cmd->set_specialization_constant(6, Limits::MaxWidth);
 
-		cmd->set_storage_buffer(0, 0, *rdram);
+		cmd->set_storage_buffer(0, 0, *rdram, rdram_offset, rdram_size);
 		cmd->set_storage_buffer(0, 1, *hidden_rdram);
 		cmd->set_storage_buffer(0, 2, need_tmem_upload ? *tmem_instances : *tmem);
 
@@ -1986,7 +1988,7 @@ bool Renderer::tmem_upload_needs_flush(uint32_t addr) const
 
 	if (fb.color_write_pending)
 	{
-		uint32_t offset = (addr - fb.addr) & (rdram->get_create_info().size - 1);
+		uint32_t offset = (addr - fb.addr) & (rdram_size - 1);
 		uint32_t pending_pixels = fb.deduced_height * fb.width;
 
 		switch (fb.fmt)
@@ -2013,7 +2015,7 @@ bool Renderer::tmem_upload_needs_flush(uint32_t addr) const
 
 	if (fb.depth_write_pending)
 	{
-		uint32_t offset = (addr - fb.depth_addr) & (rdram->get_create_info().size - 1);
+		uint32_t offset = (addr - fb.depth_addr) & (rdram_size - 1);
 		uint32_t pending_pixels = fb.deduced_height * fb.width;
 		offset >>= 1;
 
