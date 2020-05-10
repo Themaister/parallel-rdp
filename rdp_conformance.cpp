@@ -566,7 +566,7 @@ static bool run_conformance_rasterization(ReplayerState &state, const Arguments 
 static bool run_conformance_load_tile(ReplayerState &state, const Arguments &args, unsigned width, unsigned height,
                                       uint32_t tmem_offset, uint32_t tmem_stride,
                                       uint32_t rdram_offset, Op op, TextureSize vram_size, TextureSize tile_size,
-                                      uint32_t dxt = 0)
+                                      uint32_t dxt, bool yuv)
 {
 	RNG rng;
 	auto *tmem_reference = reinterpret_cast<uint16_t *>(state.reference->get_tmem());
@@ -599,7 +599,7 @@ static bool run_conformance_load_tile(ReplayerState &state, const Arguments &arg
 	info.offset = tmem_offset;
 	info.stride = tmem_stride;
 	info.size = tile_size;
-	info.fmt = TextureFormat::RGBA;
+	info.fmt = yuv ? TextureFormat::YUV : TextureFormat::RGBA;
 	state.builder.set_tile(0, info);
 	if (op == Op::LoadTLut)
 		state.builder.load_tlut(0, 1, 1, width, height);
@@ -624,10 +624,10 @@ static bool run_conformance_load_tile(ReplayerState &state, const Arguments &arg
 }
 
 static bool run_conformance_load_tile(ReplayerState &state, const Arguments &args,
-                                      Op op, TextureSize vram_size, TextureSize tile_size)
+                                      Op op, TextureSize vram_size, TextureSize tile_size, bool yuv)
 {
 	// Simple, aligned case.
-	if (!run_conformance_load_tile(state, args, 32, 7, 0, 128, 0, op, vram_size, tile_size))
+	if (!run_conformance_load_tile(state, args, 32, 7, 0, 128, 0, op, vram_size, tile_size, 0, yuv))
 	{
 		LOG_FAILURE();
 		return false;
@@ -636,7 +636,7 @@ static bool run_conformance_load_tile(ReplayerState &state, const Arguments &arg
 	if (tile_size == TextureSize::Bpp16)
 	{
 		// 4kB TMEM case.
-		if (!run_conformance_load_tile(state, args, 64, 32, 0, 128, 0, op, vram_size, tile_size))
+		if (!run_conformance_load_tile(state, args, 64, 32, 0, 128, 0, op, vram_size, tile_size, 0, yuv))
 		{
 			LOG_FAILURE();
 			return false;
@@ -646,7 +646,7 @@ static bool run_conformance_load_tile(ReplayerState &state, const Arguments &arg
 	// TMEM wrap-around case.
 	if (op == Op::LoadTile)
 	{
-		if (!run_conformance_load_tile(state, args, 128, 64, 0, 128 + 8, 0, op, vram_size, tile_size))
+		if (!run_conformance_load_tile(state, args, 128, 64, 0, 128 + 8, 0, op, vram_size, tile_size, 0, yuv))
 		{
 			LOG_FAILURE();
 			return false;
@@ -655,17 +655,17 @@ static bool run_conformance_load_tile(ReplayerState &state, const Arguments &arg
 
 	if (op == Op::LoadBlock)
 	{
-		if (tile_size == TextureSize::Bpp16)
+		if (tile_size == TextureSize::Bpp16 && !yuv)
 		{
 			// Test case where DxT is uneven.
-			if (!run_conformance_load_tile(state, args, 1600, 1, 0, 0, 0, op, vram_size, tile_size, 103))
+			if (!run_conformance_load_tile(state, args, 1600, 1, 0, 0, 0, op, vram_size, tile_size, 103, yuv))
 			{
 				LOG_FAILURE();
 				return false;
 			}
 
 			// Test case where DxT is uneven, now with a TMEM stride.
-			if (!run_conformance_load_tile(state, args, 1600, 1, 0, 8, 0, op, vram_size, tile_size, 103))
+			if (!run_conformance_load_tile(state, args, 1600, 1, 0, 8, 0, op, vram_size, tile_size, 103, yuv))
 			{
 				LOG_FAILURE();
 				return false;
@@ -674,21 +674,21 @@ static bool run_conformance_load_tile(ReplayerState &state, const Arguments &arg
 	}
 
 	// Simple, aligned case, to high TMEM
-	if (!run_conformance_load_tile(state, args, 32, 7, 0x800, 128, 0, op, vram_size, tile_size))
+	if (!run_conformance_load_tile(state, args, 32, 7, 0x800, 128, 0, op, vram_size, tile_size, 0, yuv))
 	{
 		LOG_FAILURE();
 		return false;
 	}
 
 	// Simple, aligned case with TMEM offset.
-	if (!run_conformance_load_tile(state, args, 32, 7, 128, 128, 0, op, vram_size, tile_size))
+	if (!run_conformance_load_tile(state, args, 32, 7, 128, 128, 0, op, vram_size, tile_size, 0, yuv))
 	{
 		LOG_FAILURE();
 		return false;
 	}
 
 	// Unaligned case.
-	if (!run_conformance_load_tile(state, args, 32, 9, 0, 128, 1, op, vram_size, tile_size))
+	if (!run_conformance_load_tile(state, args, 32, 9, 0, 128, 1, op, vram_size, tile_size, 0, yuv))
 	{
 		LOG_FAILURE();
 		return false;
@@ -699,7 +699,7 @@ static bool run_conformance_load_tile(ReplayerState &state, const Arguments &arg
 	{
 		for (unsigned height = 1; height < 4; height++)
 		{
-			if (!run_conformance_load_tile(state, args, width, height, 0, 0, height & 3, op, vram_size, tile_size))
+			if (!run_conformance_load_tile(state, args, width, height, 0, 0, height & 3, op, vram_size, tile_size, 0, yuv))
 			{
 				LOG_FAILURE();
 				return false;
@@ -710,7 +710,7 @@ static bool run_conformance_load_tile(ReplayerState &state, const Arguments &arg
 	// Test stride > width cases.
 	for (unsigned width = 8; width < 32; width++)
 	{
-		if (!run_conformance_load_tile(state, args, width, 3, 0, 256, width & 3, op, vram_size, tile_size))
+		if (!run_conformance_load_tile(state, args, width, 3, 0, 256, width & 3, op, vram_size, tile_size, 0, yuv))
 		{
 			LOG_FAILURE();
 			return false;
@@ -722,7 +722,7 @@ static bool run_conformance_load_tile(ReplayerState &state, const Arguments &arg
 	{
 		for (unsigned width = 8; width < 64; width++)
 		{
-			if (!run_conformance_load_tile(state, args, width, 3, 0, stride, 0, op, vram_size, tile_size))
+			if (!run_conformance_load_tile(state, args, width, 3, 0, stride, 0, op, vram_size, tile_size, 0, yuv))
 			{
 				LOG_FAILURE();
 				return false;
@@ -733,13 +733,13 @@ static bool run_conformance_load_tile(ReplayerState &state, const Arguments &arg
 	return true;
 }
 
-template <bool block>
+template <bool block, bool yuv = false>
 static bool run_conformance_load_tile4(ReplayerState &state, const Arguments &args)
 {
 	if (!block)
 	{
 		if (!run_conformance_load_tile(state, args, block ? Op::LoadBlock : Op::LoadTile, TextureSize::Bpp8,
-		                               TextureSize::Bpp4))
+		                               TextureSize::Bpp4, yuv))
 		{
 			LOG_FAILURE();
 			return false;
@@ -749,10 +749,10 @@ static bool run_conformance_load_tile4(ReplayerState &state, const Arguments &ar
 	return true;
 }
 
-template <bool block>
+template <bool block, bool yuv = false>
 static bool run_conformance_load_tile8(ReplayerState &state, const Arguments &args)
 {
-	if (!run_conformance_load_tile(state, args, block ? Op::LoadBlock : Op::LoadTile, TextureSize::Bpp8, TextureSize::Bpp8))
+	if (!run_conformance_load_tile(state, args, block ? Op::LoadBlock : Op::LoadTile, TextureSize::Bpp8, TextureSize::Bpp8, yuv))
 	{
 		LOG_FAILURE();
 		return false;
@@ -761,7 +761,7 @@ static bool run_conformance_load_tile8(ReplayerState &state, const Arguments &ar
 	if (!block)
 	{
 		if (!run_conformance_load_tile(state, args, block ? Op::LoadBlock : Op::LoadTile, TextureSize::Bpp16,
-		                               TextureSize::Bpp8))
+		                               TextureSize::Bpp8, yuv))
 		{
 			LOG_FAILURE();
 			return false;
@@ -771,25 +771,28 @@ static bool run_conformance_load_tile8(ReplayerState &state, const Arguments &ar
 	return true;
 }
 
-template <bool block>
+template <bool block, bool yuv = false>
 static bool run_conformance_load_tile16(ReplayerState &state, const Arguments &args)
 {
-	if (!run_conformance_load_tile(state, args, block ? Op::LoadBlock : Op::LoadTile, TextureSize::Bpp16, TextureSize::Bpp16))
+	if (!run_conformance_load_tile(state, args, block ? Op::LoadBlock : Op::LoadTile, TextureSize::Bpp16, TextureSize::Bpp16, yuv))
 	{
 		LOG_FAILURE();
 		return false;
 	}
 
-	if (!run_conformance_load_tile(state, args, block ? Op::LoadBlock : Op::LoadTile, TextureSize::Bpp8, TextureSize::Bpp16))
+	if (!yuv)
 	{
-		LOG_FAILURE();
-		return false;
+		if (!run_conformance_load_tile(state, args, block ? Op::LoadBlock : Op::LoadTile, TextureSize::Bpp8, TextureSize::Bpp16, yuv))
+		{
+			LOG_FAILURE();
+			return false;
+		}
 	}
 
-	if (!block)
+	if (!block && !yuv)
 	{
 		if (!run_conformance_load_tile(state, args, block ? Op::LoadBlock : Op::LoadTile, TextureSize::Bpp32,
-		                               TextureSize::Bpp16))
+		                               TextureSize::Bpp16, yuv))
 		{
 			LOG_FAILURE();
 			return false;
@@ -801,19 +804,19 @@ static bool run_conformance_load_tile16(ReplayerState &state, const Arguments &a
 
 static bool run_conformance_load_tlut4(ReplayerState &state, const Arguments &args)
 {
-	if (!run_conformance_load_tile(state, args, Op::LoadTLut, TextureSize::Bpp16, TextureSize::Bpp4))
+	if (!run_conformance_load_tile(state, args, Op::LoadTLut, TextureSize::Bpp16, TextureSize::Bpp4, false))
 	{
 		LOG_FAILURE();
 		return false;
 	}
 
-	if (!run_conformance_load_tile(state, args, Op::LoadTLut, TextureSize::Bpp8, TextureSize::Bpp4))
+	if (!run_conformance_load_tile(state, args, Op::LoadTLut, TextureSize::Bpp8, TextureSize::Bpp4, false))
 	{
 		LOG_FAILURE();
 		return false;
 	}
 
-	if (!run_conformance_load_tile(state, args, Op::LoadTLut, TextureSize::Bpp32, TextureSize::Bpp4))
+	if (!run_conformance_load_tile(state, args, Op::LoadTLut, TextureSize::Bpp32, TextureSize::Bpp4, false))
 	{
 		LOG_FAILURE();
 		return false;
@@ -824,19 +827,19 @@ static bool run_conformance_load_tlut4(ReplayerState &state, const Arguments &ar
 
 static bool run_conformance_load_tlut8(ReplayerState &state, const Arguments &args)
 {
-	if (!run_conformance_load_tile(state, args, Op::LoadTLut, TextureSize::Bpp16, TextureSize::Bpp8))
+	if (!run_conformance_load_tile(state, args, Op::LoadTLut, TextureSize::Bpp16, TextureSize::Bpp8, false))
 	{
 		LOG_FAILURE();
 		return false;
 	}
 
-	if (!run_conformance_load_tile(state, args, Op::LoadTLut, TextureSize::Bpp8, TextureSize::Bpp8))
+	if (!run_conformance_load_tile(state, args, Op::LoadTLut, TextureSize::Bpp8, TextureSize::Bpp8, false))
 	{
 		LOG_FAILURE();
 		return false;
 	}
 
-	if (!run_conformance_load_tile(state, args, Op::LoadTLut, TextureSize::Bpp32, TextureSize::Bpp8))
+	if (!run_conformance_load_tile(state, args, Op::LoadTLut, TextureSize::Bpp32, TextureSize::Bpp8, false))
 	{
 		LOG_FAILURE();
 		return false;
@@ -847,19 +850,19 @@ static bool run_conformance_load_tlut8(ReplayerState &state, const Arguments &ar
 
 static bool run_conformance_load_tlut16(ReplayerState &state, const Arguments &args)
 {
-	if (!run_conformance_load_tile(state, args, Op::LoadTLut, TextureSize::Bpp16, TextureSize::Bpp16))
+	if (!run_conformance_load_tile(state, args, Op::LoadTLut, TextureSize::Bpp16, TextureSize::Bpp16, false))
 	{
 		LOG_FAILURE();
 		return false;
 	}
 
-	if (!run_conformance_load_tile(state, args, Op::LoadTLut, TextureSize::Bpp8, TextureSize::Bpp16))
+	if (!run_conformance_load_tile(state, args, Op::LoadTLut, TextureSize::Bpp8, TextureSize::Bpp16, false))
 	{
 		LOG_FAILURE();
 		return false;
 	}
 
-	if (!run_conformance_load_tile(state, args, Op::LoadTLut, TextureSize::Bpp32, TextureSize::Bpp16))
+	if (!run_conformance_load_tile(state, args, Op::LoadTLut, TextureSize::Bpp32, TextureSize::Bpp16, false))
 	{
 		LOG_FAILURE();
 		return false;
@@ -868,22 +871,22 @@ static bool run_conformance_load_tlut16(ReplayerState &state, const Arguments &a
 	return true;
 }
 
-template <bool block>
+template <bool block, bool yuv = false>
 static bool run_conformance_load_tile32(ReplayerState &state, const Arguments &args)
 {
-	if (!run_conformance_load_tile(state, args, block ? Op::LoadBlock : Op::LoadTile, TextureSize::Bpp32, TextureSize::Bpp32))
+	if (!run_conformance_load_tile(state, args, block ? Op::LoadBlock : Op::LoadTile, TextureSize::Bpp32, TextureSize::Bpp32, false))
 	{
 		LOG_FAILURE();
 		return false;
 	}
 
-	if (!run_conformance_load_tile(state, args, block ? Op::LoadBlock : Op::LoadTile, TextureSize::Bpp16, TextureSize::Bpp32))
+	if (!run_conformance_load_tile(state, args, block ? Op::LoadBlock : Op::LoadTile, TextureSize::Bpp16, TextureSize::Bpp32, false))
 	{
 		LOG_FAILURE();
 		return false;
 	}
 
-	if (!run_conformance_load_tile(state, args, block ? Op::LoadBlock : Op::LoadTile, TextureSize::Bpp8, TextureSize::Bpp32))
+	if (!run_conformance_load_tile(state, args, block ? Op::LoadBlock : Op::LoadTile, TextureSize::Bpp8, TextureSize::Bpp32, false))
 	{
 		LOG_FAILURE();
 		return false;
@@ -1444,6 +1447,10 @@ static int main_inner(int argc, char **argv)
 		variant.texture_size = TextureSize::Bpp16;
 		return run_conformance_rasterization(state, args, variant);
 	}});
+
+	suites.push_back({ "texture-load-tile-16-yuv", run_conformance_load_tile16<false, true> });
+	suites.push_back({ "texture-load-block-16-yuv", run_conformance_load_tile16<true, true> });
+
 	suites.push_back({ "texture-load-tile-4", run_conformance_load_tile4<false> });
 	suites.push_back({ "texture-load-tile-8", run_conformance_load_tile8<false> });
 	suites.push_back({ "texture-load-tile-16", run_conformance_load_tile16<false> });

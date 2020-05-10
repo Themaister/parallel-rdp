@@ -1965,8 +1965,6 @@ void Renderer::flush_queues()
 void Renderer::set_tile(uint32_t tile, const TileMeta &meta)
 {
 	tiles[tile].meta = meta;
-	if (meta.fmt == TextureFormat::YUV)
-		LOGW("YUV tile format is currently unsupported.\n");
 }
 
 void Renderer::set_tile_size(uint32_t tile, uint32_t slo, uint32_t shi, uint32_t tlo, uint32_t thi)
@@ -2032,7 +2030,10 @@ void Renderer::load_tile(uint32_t tile, const LoadTileInfo &info)
 		auto &meta = tiles[tile].meta;
 		unsigned pixels_coverered_per_line = ((info.shi >> 2) - (info.slo >> 2)) + 1;
 
-		// Technically, 32-bpp TMEM upload will work like 16bpp, just split into two halves, but that also means
+		if (meta.fmt == TextureFormat::YUV)
+			pixels_coverered_per_line *= 2;
+
+		// Technically, 32-bpp TMEM upload and YUV upload will work like 16bpp, just split into two halves, but that also means
 		// we get 2kB wraparound instead of 4kB wraparound, so this works out just fine for our purposes.
 		unsigned quad_words_covered_per_line = ((pixels_coverered_per_line << unsigned(meta.size)) + 15) >> 4;
 
@@ -2100,16 +2101,16 @@ void Renderer::load_tile_iteration(uint32_t tile, const LoadTileInfo &info, uint
 	size.tlo = info.tlo;
 	size.thi = info.thi;
 
+	if (meta.fmt == TextureFormat::YUV && ((meta.size != TextureSize::Bpp16) || (info.size != TextureSize::Bpp16)))
+	{
+		LOGE("Only 16bpp is supported for YUV uploads.\n");
+		return;
+	}
+
 	// This case does not appear to be supported.
 	if (info.size == TextureSize::Bpp4)
 	{
 		LOGE("4-bit VRAM pointer crashes the RDP.\n");
-		return;
-	}
-
-	if (meta.fmt == TextureFormat::YUV)
-	{
-		LOGE("YUV uploads are unsupported.\n");
 		return;
 	}
 
@@ -2219,21 +2220,21 @@ void Renderer::load_tile_iteration(uint32_t tile, const LoadTileInfo &info, uint
 			// Also makes the right shift nicer (16 vs 11).
 			upload.dxt = dt << 5;
 
-			if (meta.size == TextureSize::Bpp32)
+			if (meta.size == TextureSize::Bpp32 || meta.fmt == TextureFormat::YUV)
 			{
 				if (uneven_dt)
 				{
-					LOGE("LoadBlock for Bpp32 is not supported with uneven_dt.\n");
+					LOGE("LoadBlock for Bpp32 / YUV is not supported with uneven_dt.\n");
 					return;
 				}
 
 				if (max_num_64bpp_elements_before_wrap & 1)
 				{
-					LOGE("LoadBlock for Bpp32 does not align to 64bpp tile iterations.\n");
+					LOGE("LoadBlock for Bpp32 / YUV does not align to 64bpp tile iterations.\n");
 					return;
 				}
 
-				// We iterate twice for Bpp32 to complete a 64bpp word.
+				// We iterate twice for Bpp32 and YUV to complete a 64bpp word.
 				max_num_64bpp_elements_before_wrap >>= 1;
 				min_num_64bpp_elements_before_wrap >>= 1;
 				upload.dxt <<= 1;
@@ -2329,6 +2330,9 @@ void Renderer::load_tile_iteration(uint32_t tile, const LoadTileInfo &info, uint
 
 	case TextureSize::Bpp16:
 		upload.width = (upload.width + 3) & ~3;
+		// Consider YUV uploads to be 32bpp since that's kinda what they are.
+		if (meta.fmt == TextureFormat::YUV)
+			upload.width >>= 1;
 		break;
 
 	case TextureSize::Bpp32:

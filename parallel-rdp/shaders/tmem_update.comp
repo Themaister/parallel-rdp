@@ -104,7 +104,7 @@ int compute_upload_t(int offset, float inv_stride)
 }
 
 // In 32bpp upload mode we read 64 bits and split the result over the lower and upper TMEM.
-void update_tmem_32(UploadInfo info, int tmem16_index, bool upper_tmem)
+void update_tmem_32(UploadInfo info, int tmem16_index, bool upper_tmem, bool yuv)
 {
     int tmem16_offset = (info.tmem_offset & 0x7ff) >> 1;
     int tmem16_stride = info.tmem_stride_words;
@@ -192,7 +192,7 @@ void update_tmem_32(UploadInfo info, int tmem16_index, bool upper_tmem)
 
     upload_x ^= ((upload_y & 1) << 1) | upload_x_xor;
 
-    if (info.vram_size == 3)
+    if (info.vram_size == 3 || yuv)
     {
         iteration_offset = 4 * (upload_x & ~1);
     }
@@ -259,8 +259,27 @@ void update_tmem_32(UploadInfo info, int tmem16_index, bool upper_tmem)
                 uint(vram8.data[(rdram_addr + 3) ^ 3]);
     }
 
-    word >>= 16u - 16u * uint(upper_tmem);
-    word &= 0xffffu;
+    if (yuv)
+    {
+        // Upper TMEM receives interleaved UV samples, while lower receives Y.
+        if (upper_tmem)
+        {
+            uint u = (word >> 16u) & 0xffu;
+            uint v = (word >> 0u) & 0xffu;
+            word = (u << 8u) | v;
+        }
+        else
+        {
+            uint y0 = (word >> 24u) & 0xffu;
+            uint y1 = (word >> 8u) & 0xffu;
+            word = (y0 << 8u) | y1;
+        }
+    }
+    else
+    {
+        word >>= 16u - 16u * uint(upper_tmem);
+        word &= 0xffffu;
+    }
     current_tmem_value = word;
     tmem_dirty = true;
 }
@@ -511,8 +530,9 @@ void main()
         }
         else
         {
-            if (info.tmem_size == 3)
-                update_tmem_32(info, tmem16_index & 0x3ff, upper_tmem);
+            bool yuv = info.tmem_fmt == TEXTURE_FMT_YUV;
+            if (info.tmem_size == 3 || yuv)
+                update_tmem_32(info, tmem16_index & 0x3ff, upper_tmem, yuv);
             else if (info.tmem_fmt != TEXTURE_FMT_YUV)
                 update_tmem_16(info, tmem16_index);
         }
