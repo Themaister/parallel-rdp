@@ -247,6 +247,30 @@ i16x4 sample_texel_ia8(TileInfo tile, uint tmem_instance, uvec2 st)
 	return i16x4(intensity, intensity, intensity, alpha);
 }
 
+i16x4 sample_texel_yuv16(TileInfo tile, uint tmem_instance, uvec2 st, uint chroma_x)
+{
+	uint byte_offset = tile.offset + tile.stride * st.y;
+	uint byte_offset_luma = byte_offset + st.x;
+	byte_offset_luma &= 0x7ff;
+
+	uint byte_offset_chroma = byte_offset + chroma_x * 2;
+	byte_offset_chroma &= 0x7ff;
+
+	uint index_luma = byte_offset_luma;
+	index_luma ^= (st.y & 1) << 2;
+	index_luma ^= 3;
+
+	uint index_chroma = byte_offset_chroma >> 1;
+	index_chroma ^= (st.y & 1) << 1;
+	index_chroma ^= 1;
+
+	u8 luma = u8(tmem8.instances[tmem_instance].elems[index_luma | 0x800]);
+	u16 chroma = u16(tmem16.instances[tmem_instance].elems[index_chroma]);
+	u8 u = u8((chroma >> U16_C(8)) & U16_C(0xff));
+	u8 v = u8((chroma >> U16_C(0)) & U16_C(0xff));
+	return i16x4(i16(u) - I16_C(0x80), i16(v) - I16_C(0x80), luma, luma);
+}
+
 i16x4 sample_texel_rgba16(TileInfo tile, uint tmem_instance, uvec2 st)
 {
 	uint byte_offset = tile.offset + tile.stride * st.y;
@@ -447,6 +471,19 @@ int sample_texture_copy(TileInfo tile, uint tmem_instance, ivec2 st, int s_offse
 	return samp;
 }
 
+i16x2 bilinear_3tap(i16x2 t00, i16x2 t10, i16x2 t01, i16x2 t11, ivec2 frac)
+{
+	int sum_frac = frac.x + frac.y;
+	i16x2 t_base = sum_frac >= 32 ? t11 : t00;
+	i16x2 flip_frac = i16x2(sum_frac >= 32 ? (32 - frac.yx) : frac);
+	i16x2 accum = (t10 - t_base) * flip_frac.x;
+	accum += (t01 - t_base) * flip_frac.y;
+	accum += I16_C(0x10);
+	accum >>= I16_C(5);
+	accum += t_base;
+	return accum;
+}
+
 i16x4 sample_texture(TileInfo tile, uint tmem_instance, ivec2 st, bool tlut, bool tlut_type, bool sample_quad, bool mid_texel, bool convert_one,
                      i16x4 prev_cycle)
 {
@@ -478,6 +515,7 @@ i16x4 sample_texture(TileInfo tile, uint tmem_instance, ivec2 st, bool tlut, boo
 	if (mid_texel)
 		sum_frac = 0;
 
+	bool yuv = tile.fmt == TEXTURE_FORMAT_YUV;
 	ivec2 base_st = sum_frac >= 0x20 ? ivec2(s1, t1) : ivec2(s0, t0);
 
 	if (tlut)
@@ -590,6 +628,22 @@ i16x4 sample_texture(TileInfo tile, uint tmem_instance, ivec2 st, bool tlut, boo
 				break;
 			}
 			break;
+
+		case TEXTURE_FORMAT_YUV:
+		{
+			uint chroma_x0 = s0 >> 1;
+			uint chroma_x1 = (s1 + (s1 - s0)) >> 1;
+
+			// Only implement 16bpp for now. It's the only one that gives meaningful results.
+			t_base = sample_texel_yuv16(tile, tmem_instance, ivec2(s0, t0), chroma_x0);
+			if (sample_quad)
+			{
+				t10 = sample_texel_yuv16(tile, tmem_instance, ivec2(s1, t0), chroma_x1);
+				t01 = sample_texel_yuv16(tile, tmem_instance, ivec2(s0, t1), chroma_x0);
+				t11 = sample_texel_yuv16(tile, tmem_instance, ivec2(s1, t1), chroma_x1);
+			}
+			break;
+		}
 
 		case TEXTURE_FORMAT_CI:
 			switch (int(tile.size))
@@ -728,6 +782,15 @@ i16x4 sample_texture(TileInfo tile, uint tmem_instance, ivec2 st, bool tlut, boo
 		converted >>= 8;
 		converted += prev_sext.b;
 		accum = i16x4(converted);
+	}
+	else if (yuv)
+	{
+		int chroma_frac = ((s0 & 1) << 4) | (frac.x >> 1);
+		if (!sample_quad)
+			chroma_frac = 0;
+		i16x2 accum_chroma = bilinear_3tap(t_base.xy, t10.xy, t01.xy, t11.xy, ivec2(chroma_frac, frac.y));
+		i16x2 accum_luma = bilinear_3tap(t_base.zw, t10.zw, t01.zw, t11.zw, frac);
+		accum = i16x4(accum_chroma, accum_luma);
 	}
 	else if (mid_texel)
 	{

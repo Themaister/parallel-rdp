@@ -126,6 +126,7 @@ struct RasterizationTestVariant
 	bool tlut_type;
 	bool mid_texel;
 	bool convert_one;
+	bool bilerp0 = true;
 	bool bilerp1 = true;
 	RGBDitherMode dither = RGBDitherMode::Off;
 	AlphaDitherMode alpha_dither = AlphaDitherMode::Off;
@@ -342,6 +343,7 @@ static bool run_conformance_rasterization(ReplayerState &state, const Arguments 
 	state.builder.set_enable_primitive_depth(variant.prim_depth);
 	state.builder.set_enable_mid_texel(variant.mid_texel);
 	state.builder.set_enable_convert_one(variant.convert_one);
+	state.builder.set_enable_bilerp_cycle(0, variant.bilerp0);
 	state.builder.set_enable_bilerp_cycle(1, variant.bilerp1);
 
 	for (unsigned i = 0; i <= args.hi; i++)
@@ -1376,6 +1378,19 @@ static int main_inner(int argc, char **argv)
 		return run_conformance_rasterization(state, args, variant);
 	}});
 
+	suites.push_back({ "interpolation-color-texture-yuv16-nearest", [](ReplayerState &state, const Arguments &args) -> bool {
+		RasterizationTestVariant variant = {};
+		variant.color = true;
+		variant.texture = true;
+		variant.texture_size = TextureSize::Bpp16;
+		variant.texture_format = TextureFormat::YUV;
+		variant.cycle_type = CycleType::Cycle1;
+		variant.bilerp1 = false;
+		variant.bilerp0 = false;
+		variant.sample_quad = false;
+		return run_conformance_rasterization(state, args, variant);
+	}});
+
 #define TEXTURE_TEST_MID_TEXEL(name, fmt, size, tlut_enable, tlut_ia_type, sample_q, mid) \
 	suites.push_back({ "interpolation-color-texture-" #name, [](ReplayerState &state, const Arguments &args) -> bool { \
 		RasterizationTestVariant variant = {}; \
@@ -1396,6 +1411,8 @@ static int main_inner(int argc, char **argv)
 	TEXTURE_TEST(rgba8, RGBA, Bpp8, false, false, true);
 	TEXTURE_TEST(rgba16, RGBA, Bpp16, false, false, true);
 	TEXTURE_TEST(rgba32, RGBA, Bpp32, false, false, true);
+
+	TEXTURE_TEST(yuv16, YUV, Bpp16, false, false, true);
 
 	TEXTURE_TEST_MID_TEXEL(rgba16-mid-texel, RGBA, Bpp16, false, false, true, true);
 

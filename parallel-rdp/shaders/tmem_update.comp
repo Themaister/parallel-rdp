@@ -261,18 +261,18 @@ void update_tmem_32(UploadInfo info, int tmem16_index, bool upper_tmem, bool yuv
 
     if (yuv)
     {
-        // Upper TMEM receives interleaved UV samples, while lower receives Y.
+        // Lower TMEM receives interleaved UV samples, while upper receives Y.
         if (upper_tmem)
         {
-            uint u = (word >> 16u) & 0xffu;
-            uint v = (word >> 0u) & 0xffu;
-            word = (u << 8u) | v;
+            uint y0 = (word >> 16u) & 0xffu;
+            uint y1 = (word >> 0u) & 0xffu;
+            word = (y0 << 8u) | y1;
         }
         else
         {
-            uint y0 = (word >> 24u) & 0xffu;
-            uint y1 = (word >> 8u) & 0xffu;
-            word = (y0 << 8u) | y1;
+            uint u = (word >> 24u) & 0xffu;
+            uint v = (word >> 8u) & 0xffu;
+            word = (u << 8u) | v;
         }
     }
     else

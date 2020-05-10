@@ -1169,8 +1169,12 @@ void Renderer::deduce_static_texture_state(unsigned tile, unsigned max_lod_level
 		bool use_lod = (state.flags & RASTERIZATION_TEX_LOD_ENABLE_BIT) != 0;
 		bool use_detail = (state.flags & RASTERIZATION_DETAIL_LOD_ENABLE_BIT) != 0;
 
+		bool uses_physical_texel1 = uses_texel1 &&
+		                            ((state.flags & RASTERIZATION_CONVERT_ONE_BIT) == 0 ||
+		                             (state.flags & RASTERIZATION_BILERP_1_BIT) != 0);
+
 		if (!use_lod)
-			max_lod_level = uses_texel1 ? 1 : 0;
+			max_lod_level = uses_physical_texel1 ? 1 : 0;
 		if (use_detail)
 			max_lod_level++;
 		max_lod_level = std::min(max_lod_level, 7u);
