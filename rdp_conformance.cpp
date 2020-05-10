@@ -403,7 +403,7 @@ static bool run_conformance_rasterization(ReplayerState &state, const Arguments 
 					rng.rnd() & 0xff);
 		}
 
-		if (variant.combiner_inputs || variant.convert_one)
+		if (variant.combiner_inputs || variant.convert_one || !variant.bilerp0)
 		{
 			state.builder.set_convert(
 					uint16_t(rng.rnd()),

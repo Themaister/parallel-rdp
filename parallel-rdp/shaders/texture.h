@@ -785,12 +785,15 @@ i16x4 sample_texture(TileInfo tile, uint tmem_instance, ivec2 st, bool tlut, boo
 	}
 	else if (yuv)
 	{
-		int chroma_frac = ((s0 & 1) << 4) | (frac.x >> 1);
-		if (!sample_quad)
-			chroma_frac = 0;
-		i16x2 accum_chroma = bilinear_3tap(t_base.xy, t10.xy, t01.xy, t11.xy, ivec2(chroma_frac, frac.y));
-		i16x2 accum_luma = bilinear_3tap(t_base.zw, t10.zw, t01.zw, t11.zw, frac);
-		accum = i16x4(accum_chroma, accum_luma);
+		if (sample_quad)
+		{
+			int chroma_frac = ((s0 & 1) << 4) | (frac.x >> 1);
+			i16x2 accum_chroma = bilinear_3tap(t_base.xy, t10.xy, t01.xy, t11.xy, ivec2(chroma_frac, frac.y));
+			i16x2 accum_luma = bilinear_3tap(t_base.zw, t10.zw, t01.zw, t11.zw, frac);
+			accum = i16x4(accum_chroma, accum_luma);
+		}
+		else
+			accum = t_base;
 	}
 	else if (mid_texel)
 	{
