@@ -356,6 +356,7 @@ enum VIControlFlagBits
 	VI_CONTROL_AA_MODE_MASK = 3 << 8,
 	VI_CONTROL_DITHER_FILTER_ENABLE_BIT = 1 << 16
 };
+using VIControlFlags = uint32_t;
 
 static inline uint32_t make_vi_start_register(uint32_t start_value, uint32_t end_value)
 {

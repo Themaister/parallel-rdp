@@ -191,7 +191,7 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const S
 		return scanout;
 	}
 
-	int status = vi_registers[unsigned(VIRegister::Control)];
+	int status = vi_registers[unsigned(VIRegister::Control)] & ~options.disable_vi_feature_mask;
 
 	bool is_blank = (status & VI_CONTROL_TYPE_RGBA5551_BIT) == 0;
 	if (is_blank && previous_frame_blank)
