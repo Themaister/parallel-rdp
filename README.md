@@ -39,8 +39,47 @@ Ticking the last boxes depends mostly on real content making use of said feature
 - ... possibly other obscure features
 
 The VI is essentially complete. A fancy deinterlacer might be useful to add since we have plenty of GPU cycles to spare in the graphics queue.
-The VI filtering is always turned on if game requests it.
-Some work to make VI output more configurable could be considered.
+The VI filtering is always turned on if game requests it, but features can selectively be turned off for the pixel purists.
+
+## Environment variables for development / testing
+
+### `RDP_DEBUG` / `RDP_DEBUG_X` / `RDP_DEBUG_Y`
+
+Supports printf in shaders, which is extremely useful to drill down difficult bugs.
+Only printfs from certain pixels can be filtered through to avoid spam.
+
+### `VI_DEBUG` / `VI_DEBUG_X` / `VI_DEBUG_Y`
+
+Same as `RDP_DEBUG` but for the VI.
+
+### `PARALLEL_RDP_MEASURE_SYNC_TIME`
+
+Measures time stalled in `CommandProcessor::wait_for_timeline`. Useful to measure
+CPU overhead in hard-synced emulator integrations.
+
+### `PARALLEL_RDP_SMALL_TYPES=0`
+
+Force-disables 8/16-bit arithmetic support. Useful when suspecting driver bugs.
+
+### `PARALLEL_RDP_UBERSHADER=1`
+
+Forces the use of ubershaders. Can be extremely slow depending on the shader compiler.
+
+### `PARALLEL_RDP_FORCE_SYNC_SHADER=1`
+
+Disabled async pipeline optimization, and blocks for every shader compiler.
+Only use if the ubershader crashes, since this adds the dreaded shader compilation stalls.
+
+### `PARALLEL_RDP_BENCH=1`
+
+Measures RDP rendering time spent on GPU using Vulkan timestamps.
+At end of a run, reports average time spent per render pass,
+and how many render passes are flushed per frame.
+
+### `PARALLEL_RDP_SUBGROUP=0`
+
+Force-disables use of Vulkan subgroup operations,
+which are used to optimize the tile binning algorithm.
 
 ## Vulkan driver requirements
 
