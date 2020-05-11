@@ -62,6 +62,8 @@ public:
 
 	~CommandProcessor();
 
+	bool device_is_supported() const;
+
 	// Synchronization.
 	void flush();
 	uint64_t signal_timeline();
@@ -146,5 +148,6 @@ private:
 	};
 	WorkerThread<std::pair<Vulkan::Fence, uint64_t>, FenceExecutor> timeline_worker;
 	bool measure_stall_time = false;
+	bool is_supported = false;
 };
 }

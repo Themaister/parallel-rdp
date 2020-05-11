@@ -36,6 +36,8 @@ public:
 		, gpu(device, nullptr, 0, player.get_rdram_size(), player.get_hidden_rdram_size(),
 			  COMMAND_PROCESSOR_FLAG_HOST_VISIBLE_HIDDEN_RDRAM_BIT | COMMAND_PROCESSOR_FLAG_HOST_VISIBLE_TMEM_BIT)
 	{
+		if (!gpu.device_is_supported())
+			throw std::runtime_error("GPU is not supported.");
 	}
 
 private:

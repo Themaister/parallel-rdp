@@ -112,7 +112,13 @@ void CommandProcessor::begin_frame_context()
 
 void CommandProcessor::init_renderer()
 {
-	renderer.set_device(&device);
+	if (!rdram)
+	{
+		is_supported = false;
+		return;
+	}
+
+	is_supported = renderer.set_device(&device);
 	renderer.set_rdram(rdram.get(), rdram_offset, rdram_size);
 	renderer.set_hidden_rdram(hidden_rdram.get());
 	renderer.set_tmem(tmem.get());
@@ -131,6 +137,11 @@ void CommandProcessor::init_renderer()
 	renderer.set_shader_bank(shader_bank.get());
 	vi.set_shader_bank(shader_bank.get());
 #endif
+}
+
+bool CommandProcessor::device_is_supported() const
+{
+	return is_supported;
 }
 
 void CommandProcessor::clear_hidden_rdram()
