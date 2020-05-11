@@ -254,13 +254,23 @@ class StateCache
 public:
 	unsigned add(const T &t)
 	{
-		for (unsigned i = 0; i < count; i++)
+		if (cached_index >= 0)
+			if (memcmp(&elements[cached_index], &t, sizeof(T)) == 0)
+				return unsigned(cached_index);
+
+		for (int i = int(count) - 1; i >= 0; i--)
+		{
 			if (memcmp(&elements[i], &t, sizeof(T)) == 0)
-				return i;
+			{
+				cached_index = i;
+				return unsigned(i);
+			}
+		}
 
 		assert(count < N);
 		memcpy(elements + count, &t, sizeof(T));
 		unsigned ret = count++;
+		cached_index = int(ret);
 		return ret;
 	}
 
@@ -287,6 +297,7 @@ public:
 	void reset()
 	{
 		count = 0;
+		cached_index = -1;
 	}
 
 	bool empty() const
@@ -296,6 +307,7 @@ public:
 
 private:
 	unsigned count = 0;
+	int cached_index = -1;
 	T elements[N];
 };
 
