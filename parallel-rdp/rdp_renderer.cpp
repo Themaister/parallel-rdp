@@ -629,9 +629,11 @@ void Renderer::build_combiner_constants(DerivedSetup &setup, unsigned cycle) con
 		encode_rgb(output.mulsub, uint32_t(constants.convert[4]) << 8);
 		break;
 
-#define UNSUPPORTED(x) case RGBMulSub::x: LOGW("RGBMulSub::" #x " is not yet supported.\n"); break
-	UNSUPPORTED(KeyCenter);
-#undef UNSUPPORTED
+	case RGBMulSub::KeyCenter:
+		output.mulsub[0] = constants.key_center[0];
+		output.mulsub[1] = constants.key_center[1];
+		output.mulsub[2] = constants.key_center[2];
+		break;
 
 	default:
 		break;
@@ -664,9 +666,11 @@ void Renderer::build_combiner_constants(DerivedSetup &setup, unsigned cycle) con
 		encode_rgb(output.mul, uint32_t(constants.convert[5]) << 8);
 		break;
 
-#define UNSUPPORTED(x) case RGBMul::x: LOGW("RGBMul::" #x " is not yet supported.\n"); break
-	UNSUPPORTED(KeyScale);
-#undef UNSUPPORTED
+	case RGBMul::KeyScale:
+		output.mul[0] = constants.key_scale[0];
+		output.mul[1] = constants.key_scale[1];
+		output.mul[2] = constants.key_scale[2];
+		break;
 
 	default:
 		break;
@@ -782,7 +786,7 @@ DerivedSetup Renderer::build_derived_attributes(const AttributeSetup &attr) cons
 	setup.min_lod = constants.min_level;
 
 	for (unsigned i = 0; i < 4; i++)
-		setup.convert_factors[i] = int16_t(sext<9>(constants.convert[i]) * 2 + 1);
+		setup.convert_factors[i] = int16_t(constants.convert[i]);
 
 	return setup;
 }
@@ -2398,12 +2402,19 @@ void Renderer::set_enable_primitive_depth(bool enable)
 
 void Renderer::set_convert(uint16_t k0, uint16_t k1, uint16_t k2, uint16_t k3, uint16_t k4, uint16_t k5)
 {
-	constants.convert[0] = k0;
-	constants.convert[1] = k1;
-	constants.convert[2] = k2;
-	constants.convert[3] = k3;
+	constants.convert[0] = 2 * sext<9>(k0) + 1;
+	constants.convert[1] = 2 * sext<9>(k1) + 1;
+	constants.convert[2] = 2 * sext<9>(k2) + 1;
+	constants.convert[3] = 2 * sext<9>(k3) + 1;
 	constants.convert[4] = k4;
 	constants.convert[5] = k5;
+}
+
+void Renderer::set_color_key(unsigned component, uint32_t width, uint32_t center, uint32_t scale)
+{
+	constants.key_width[component] = width;
+	constants.key_center[component] = center;
+	constants.key_scale[component] = scale;
 }
 
 void Renderer::set_primitive_color(uint8_t min_level, uint8_t prim_lod_frac, uint32_t color)

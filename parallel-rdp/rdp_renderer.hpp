@@ -96,6 +96,7 @@ public:
 	void set_primitive_depth(uint16_t prim_depth, uint16_t prim_dz);
 	void set_enable_primitive_depth(bool enable);
 	void set_convert(uint16_t k0, uint16_t k1, uint16_t k2, uint16_t k3, uint16_t k4, uint16_t k5);
+	void set_color_key(unsigned component, uint32_t width, uint32_t center, uint32_t scale);
 
 	void flush();
 	Vulkan::Fence flush_and_signal();
@@ -222,6 +223,10 @@ private:
 		int32_t prim_depth = 0;
 		uint16_t prim_dz = 0;
 		uint16_t convert[6] = {};
+
+		uint16_t key_width[3] = {};
+		uint8_t key_center[3] = {};
+		uint8_t key_scale[3] = {};
 
 		bool use_prim_depth = false;
 	} constants;

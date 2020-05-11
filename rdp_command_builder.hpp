@@ -97,6 +97,9 @@ public:
 	void set_primitive_color(uint8_t min_lod, uint8_t prim_lod_frac, uint8_t r, uint8_t g, uint8_t b, uint8_t a);
 	void set_fill_color(uint32_t col);
 	void set_convert(uint16_t k0, uint16_t k1, uint16_t k2, uint16_t k3, uint16_t k4, uint16_t k5);
+	void set_key_r(uint32_t width, uint32_t center, uint32_t scale);
+	void set_key_gb(uint32_t g_width, uint32_t g_center, uint32_t g_scale,
+	                uint32_t b_width, uint32_t b_center, uint32_t b_scale);
 
 	void set_primitive_depth(uint16_t prim_depth, uint16_t prim_dz);
 	void set_enable_primitive_depth(bool enable);

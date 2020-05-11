@@ -181,13 +181,15 @@ static RGBMulAdd generate_random_input(RNG &rng, RGBMulAdd input)
 
 static RGBMulSub generate_random_input(RNG &rng, RGBMulSub input)
 {
-	switch (rng.rnd() % 4)
+	switch (rng.rnd() % 5)
 	{
 	case 0:
 		return RGBMulSub::Env;
 	case 1:
 		return RGBMulSub::ConvertK4;
 	case 2:
+		return RGBMulSub::KeyCenter;
+	case 3:
 		return RGBMulSub::Primitive;
 	default:
 		return input;
@@ -199,7 +201,7 @@ static RGBMul generate_random_input(RNG &rng, RGBMul input)
 	if (input == RGBMul::CombinedAlpha)
 		return input;
 
-	switch (rng.rnd() % 6)
+	switch (rng.rnd() % 7)
 	{
 	case 0:
 		return RGBMul::Primitive;
@@ -211,6 +213,8 @@ static RGBMul generate_random_input(RNG &rng, RGBMul input)
 		return RGBMul::EnvAlpha;
 	case 4:
 		return RGBMul::ConvertK5;
+	case 5:
+		return RGBMul::KeyScale;
 	default:
 		return input;
 	}
@@ -399,6 +403,19 @@ static bool run_conformance_rasterization(ReplayerState &state, const Arguments 
 			state.builder.set_env_color(
 					rng.rnd() & 0xff,
 					rng.rnd() & 0xff,
+					rng.rnd() & 0xff,
+					rng.rnd() & 0xff);
+
+			state.builder.set_key_r(
+					rng.rnd() & 0xfff,
+					rng.rnd() & 0xff,
+					rng.rnd() & 0xff);
+
+			state.builder.set_key_gb(
+					rng.rnd() & 0xfff,
+					rng.rnd() & 0xff,
+					rng.rnd() & 0xff,
+					rng.rnd() & 0xfff,
 					rng.rnd() & 0xff,
 					rng.rnd() & 0xff);
 		}

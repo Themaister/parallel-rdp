@@ -721,9 +721,29 @@ void CommandProcessor::op_set_convert(const uint32_t *words)
 	renderer.set_convert(k0, k1, k2, k3, k4, k5);
 }
 
+void CommandProcessor::op_set_key_gb(const uint32_t *words)
+{
+	uint32_t g_width = (words[0] >> 12) & 0xfff;
+	uint32_t b_width = (words[0] >> 0) & 0xfff;
+	uint32_t g_center = (words[1] >> 24) & 0xff;
+	uint32_t g_scale = (words[1] >> 16) & 0xff;
+	uint32_t b_center = (words[1] >> 8) & 0xff;
+	uint32_t b_scale = (words[1] >> 0) & 0xff;
+	renderer.set_color_key(1, g_width, g_center, g_scale);
+	renderer.set_color_key(2, b_width, b_center, b_scale);
+}
+
+void CommandProcessor::op_set_key_r(const uint32_t *words)
+{
+	uint32_t r_width = (words[1] >> 16) & 0xfff;
+	uint32_t r_center = (words[1] >> 8) & 0xff;
+	uint32_t r_scale = (words[1] >> 0) & 0xff;
+	renderer.set_color_key(0, r_width, r_center, r_scale);
+}
+
 #define OP(x) void CommandProcessor::op_##x(const uint32_t *) {}
 OP(sync_load) OP(sync_pipe)
-OP(sync_tile) OP(set_key_gb) OP(set_key_r)
+OP(sync_tile)
 #undef OP
 
 void CommandProcessor::enqueue_command(unsigned num_words, const uint32_t *words)

@@ -212,6 +212,35 @@ void CommandBuilder::set_convert(uint16_t k0, uint16_t k1, uint16_t k2, uint16_t
 	iface->command(Op::SetConvert, 2, cmd);
 }
 
+void CommandBuilder::set_key_r(uint32_t width, uint32_t center, uint32_t scale)
+{
+	uint32_t cmd[2] = {};
+	cmd[0] = uint32_t(Op::SetKeyR) << 24;
+
+	cmd[1] |= (width & 0xfff) << 16;
+	cmd[1] |= (center & 0xff) << 8;
+	cmd[1] |= (scale & 0xff) << 0;
+
+	iface->command(Op::SetKeyR, 2, cmd);
+}
+
+void CommandBuilder::set_key_gb(uint32_t g_width, uint32_t g_center, uint32_t g_scale,
+                                uint32_t b_width, uint32_t b_center, uint32_t b_scale)
+{
+	uint32_t cmd[2] = {};
+	cmd[0] = uint32_t(Op::SetKeyGB) << 24;
+
+	cmd[0] |= (g_width & 0xfff) << 12;
+	cmd[0] |= (b_width & 0xfff) << 0;
+
+	cmd[1] |= (g_center & 0xff) << 24;
+	cmd[1] |= (g_scale & 0xff) << 16;
+	cmd[1] |= (b_center & 0xff) << 8;
+	cmd[1] |= (b_scale & 0xff) << 0;
+
+	iface->command(Op::SetKeyGB, 2, cmd);
+}
+
 void CommandBuilder::set_primitive_depth(uint16_t prim_depth, uint16_t prim_dz)
 {
 	uint32_t cmd[2] = {};
