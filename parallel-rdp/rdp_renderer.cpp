@@ -2216,7 +2216,10 @@ void Renderer::load_tile_iteration(uint32_t tile, const LoadTileInfo &info, uint
 				// If this error is less than 1 step of dt, we can be certain that we will get max_num iterations every time,
 				// and we can ignore the worst edge cases.
 				if (overflow_amt < dt)
+				{
 					min_num_64bpp_elements_before_wrap = max_num_64bpp_elements_before_wrap;
+					uneven_dt = false;
+				}
 			}
 
 			// Add more precision bits to DXT. We might have to shift it down if we have a meta.size fixup down below.

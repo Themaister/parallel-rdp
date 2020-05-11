@@ -678,7 +678,14 @@ static bool run_conformance_load_tile(ReplayerState &state, const Arguments &arg
 		    (vram_size == TextureSize::Bpp16 && tile_size == TextureSize::Bpp16 && yuv))
 		{
 			// Test case where DxT is uneven and gets T wraparound within the 64-bit word.
-			if (!run_conformance_load_tile(state, args, 800, 1, 0, 0, 0, op, vram_size, tile_size, 872, yuv))
+			if (!run_conformance_load_tile(state, args, 799, 1, 0, 0, 0, op, vram_size, tile_size, 872, yuv))
+			{
+				LOG_FAILURE();
+				return false;
+			}
+
+			// Batshit insanity, now with TMEM stride on top of it!
+			if (!run_conformance_load_tile(state, args, 100, 1, 0, 32, 0, op, vram_size, tile_size, 872, yuv))
 			{
 				LOG_FAILURE();
 				return false;

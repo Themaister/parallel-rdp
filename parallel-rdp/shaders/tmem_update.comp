@@ -147,13 +147,13 @@ void update_tmem_32(UploadInfo info, int tmem16_index, bool upper_tmem, bool yuv
         else
         {
             // Welp ... This is pure insanity, but if we want to be completely correct ...
-            int min_t = compute_upload_t(word_offset, info.min_t_mod);
-            int max_t = compute_upload_t(word_offset, info.max_t_mod);
+            int min_t = compute_upload_t(word_offset & ~1, info.min_t_mod);
+            int max_t = compute_upload_t(word_offset | 1, info.max_t_mod);
 
             // If t has a range, then the solution to Y = (t = floor(X * dt / 2048)) * stride + X has a range space of:
             // Y - t_max * stride <= X <= Y - t_min * stride.
-            int max_word_candidate = word_offset - tmem16_stride * min_t;
-            int min_word_candidate = word_offset - tmem16_stride * max_t;
+            int max_word_candidate = (word_offset | 1) - tmem16_stride * min_t;
+            int min_word_candidate = (word_offset & ~1) - tmem16_stride * max_t;
 
             // If we have constraints for X, we constraint T further.
             min_t = max(min_t, (min_word_candidate * info.dxt) >> 16);
@@ -163,13 +163,24 @@ void update_tmem_32(UploadInfo info, int tmem16_index, bool upper_tmem, bool yuv
             for (int t = max_t; t >= min_t; t--)
             {
                 // Check to see if t is a solution to the equation.
-                int candidate_solution = word_offset - tmem16_stride * t;
-                int computed_t = (candidate_solution * info.dxt) >> 16;
-                if (candidate_solution + computed_t * tmem16_stride == word_offset)
+                // Potentially two targets could write here.
+                int candidate_solution_first = (word_offset & ~1) - tmem16_stride * t;
+                int candidate_solution_second = (word_offset | 1) - tmem16_stride * t;
+
+                int candidate_t_first = (candidate_solution_first * info.dxt) >> 16;
+                int candidate_t_second = (candidate_solution_second * info.dxt) >> 16;
+
+                if (((candidate_solution_second + candidate_t_second * tmem16_stride) ^ (candidate_t_second & 1)) == word_offset)
                 {
                     found_candidate = true;
-                    upload_x_xor = (computed_t & 1) << 1;
-                    pixel_offset = (candidate_solution << 1) + (pixel_offset & 1);
+                    pixel_offset = (candidate_solution_second << 1) + (pixel_offset & 1);
+                    break;
+                }
+                else if (((candidate_solution_first + candidate_t_first * tmem16_stride) ^ (candidate_t_first & 1)) == word_offset)
+                {
+                    found_candidate = true;
+                    pixel_offset = (candidate_solution_first << 1) + (pixel_offset & 1);
+                    break;
                 }
             }
 
