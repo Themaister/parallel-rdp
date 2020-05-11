@@ -216,6 +216,15 @@ You can run rdp-conformance and vi-conformance with ctest to verify if your driv
 ctest (-C Release on MSVC)
 ```
 
+### Embedding shaders in a C++ header
+
+If embedding paraLLEl-RDP in an emulator project, it is helpful to pre-compile and bake SPIR-V shaders in a C++ header.
+Build slangmosh from Granite, and then run:
+
+```
+slangmosh parallel-rdp/shaders/slangmosh.json --output slangmosh.hpp --vk11 --strip -O --namespace RDP
+```
+
 ## License
 
 paraLLEl-RDP is licensed under the permissive license MIT. See included LICENSE file.
