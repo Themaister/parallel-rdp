@@ -22,6 +22,7 @@
 
 #include "rdp_device.hpp"
 #include "rdp_common.hpp"
+#include <chrono>
 
 #ifndef PARALLEL_RDP_SHADER_DIR
 #include "shaders/slangmosh.hpp"
@@ -88,6 +89,13 @@ CommandProcessor::CommandProcessor(Vulkan::Device &device_, void *rdram_ptr,
 			Granite::Global::create_thread_context(),
 #endif
 			this, 4 * 1024);
+
+	if (const char *env = getenv("PARALLEL_RDP_MEASURE_SYNC_TIME"))
+	{
+		measure_stall_time = strtol(env, nullptr, 0) > 0;
+		if (measure_stall_time)
+			LOGI("Will measure stall timings.\n");
+	}
 }
 
 CommandProcessor::~CommandProcessor()
@@ -872,9 +880,18 @@ uint64_t CommandProcessor::signal_timeline()
 
 void CommandProcessor::wait_for_timeline(uint64_t index)
 {
+	std::chrono::time_point<std::chrono::high_resolution_clock> start_ts, end_ts;
+	if (measure_stall_time)
+		start_ts = std::chrono::high_resolution_clock::now();
 	timeline_worker.wait([this, index]() -> bool {
 		return thread_timeline_value >= index;
 	});
+	if (measure_stall_time)
+	{
+		end_ts = std::chrono::high_resolution_clock::now();
+		double ms = std::chrono::duration_cast<std::chrono::nanoseconds>(end_ts - start_ts).count() * 1e-6;
+		LOGI("parallel-RDP sync: Stalled for %.3f ms.\n", ms);
+	}
 }
 
 Vulkan::ImageHandle CommandProcessor::scanout(const ScanoutOptions &opts)

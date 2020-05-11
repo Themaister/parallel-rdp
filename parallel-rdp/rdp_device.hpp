@@ -145,5 +145,6 @@ private:
 		void notify_work_locked(const std::pair<Vulkan::Fence, uint64_t> &work);
 	};
 	WorkerThread<std::pair<Vulkan::Fence, uint64_t>, FenceExecutor> timeline_worker;
+	bool measure_stall_time = false;
 };
 }
