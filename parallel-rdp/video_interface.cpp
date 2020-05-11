@@ -191,7 +191,28 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const S
 		return scanout;
 	}
 
-	int status = vi_registers[unsigned(VIRegister::Control)] & ~options.disable_vi_feature_mask;
+	uint32_t status = vi_registers[unsigned(VIRegister::Control)];
+
+	if (!options.vi.serrate)
+		status &= ~VI_CONTROL_SERRATE_BIT;
+
+	if (!options.vi.aa && !options.vi.scale)
+	{
+		status &= ~VI_CONTROL_AA_MODE_MASK;
+		status |= VI_CONTROL_AA_MODE_RESAMP_REPLICATE_BIT;
+	}
+	else if (!options.vi.aa && (status & (VI_CONTROL_AA_MODE_RESAMP_EXTRA_BIT | VI_CONTROL_AA_MODE_RESAMP_EXTRA_ALWAYS_BIT)) != 0)
+	{
+		status &= ~VI_CONTROL_AA_MODE_MASK;
+		status |= VI_CONTROL_AA_MODE_RESAMP_ONLY_BIT;
+	}
+
+	if (!options.vi.gamma_dither)
+		status &= ~VI_CONTROL_GAMMA_DITHER_ENABLE_BIT;
+	if (!options.vi.divot_filter)
+		status &= ~VI_CONTROL_DIVOT_ENABLE_BIT;
+	if (!options.vi.dither_filter)
+		status &= ~VI_CONTROL_DITHER_FILTER_ENABLE_BIT;
 
 	bool is_blank = (status & VI_CONTROL_TYPE_RGBA5551_BIT) == 0;
 	if (is_blank && previous_frame_blank)

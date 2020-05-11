@@ -32,7 +32,15 @@ struct ScanoutOptions
 {
 	bool crop_overscan = false;
 	bool persist_frame_on_invalid_input = false;
-	VIControlFlags disable_vi_feature_mask = 0;
+	struct
+	{
+		bool aa = true;
+		bool scale = true;
+		bool serrate = true;
+		bool dither_filter = true;
+		bool divot_filter = true;
+		bool gamma_dither = true;
+	} vi;
 };
 
 class VideoInterface : public Vulkan::DebugChannelInterface
