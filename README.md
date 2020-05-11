@@ -99,6 +99,20 @@ Just use the reference renderer for that. This is enthusiast software for a nich
 - Optionally subgroup support with VK_EXT_subgroup_size_control
 - For integration in emulators, VK_EXT_external_memory_host is currently required (may be relaxed later at some performance cost)
 
+### Tested drivers
+
+paraLLEl-RDP has been tested on Linux and Windows on all desktop vendors.
+
+- Intel Mesa (20.0.6) - Passes conformance
+- Intel Windows - Passes conformance (**CAVEAT**. Intel Windows requires 64 KiB alignment for host memory import, make sure to add some padding around RDRAM in an emulator to make this work well.)
+- AMD RADV LLVM (20.0.6) - Passes conformance
+- AMD RADV ACO - Uncertain, 8/16-bit storage is bleeding edge for ACO and master as of 2020-05-12 has a compiler regression causing segfaults in common compiler code.
+- Linux AMDGPU-PRO - Passes conformance, with caveat that 8/16-bit arithmetic does not work correctly for some tests.
+  paraLLEl-RDP automatically disables small integer arithmetic for proprietary AMD driver.
+- AMD Windows - Passes conformance with same caveat and workaround as AMDGPU-PRO.
+- NVIDIA Linux - Passes conformance (**MAJOR CAVEAT**, NVIDIA Linux does not support VK_EXT_external_memory_host as of 2020-05-12.)
+- NVIDIA Windows - Passes conformance
+
 ## Implementation strategy
 
 This project uses Vulkan compute shaders to implement a fully programmable rasterization pipeline.
