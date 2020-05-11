@@ -136,6 +136,15 @@ bool Renderer::init_caps()
 		return false;
 	}
 
+	if (features.supports_driver_properties)
+	{
+		if (features.driver_properties.driverID == VK_DRIVER_ID_AMD_PROPRIETARY_KHR)
+		{
+			LOGW("Current proprietary AMD driver is known to be buggy with 8/16-bit integer arithmetic, disabling support for time being.\n");
+			allow_small_types = false;
+		}
+	}
+
 	if (!allow_small_types)
 	{
 		caps.supports_small_integer_arithmetic = false;
