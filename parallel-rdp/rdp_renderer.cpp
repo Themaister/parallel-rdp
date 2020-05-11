@@ -1392,15 +1392,19 @@ void Renderer::update_tmem_instances(Vulkan::CommandBuffer &cmd)
 	cmd.set_specialization_constant_mask(1);
 	cmd.set_specialization_constant(0, ImplementationConstants::DefaultWorkgroupSize);
 
+#ifdef FINE_GRAINED_TIMESTAMP
 	Vulkan::QueryPoolHandle start_ts, end_ts;
 	if (caps.timestamp)
 		start_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+#endif
 	cmd.dispatch(2048 / ImplementationConstants::DefaultWorkgroupSize, 1, 1);
+#ifdef FINE_GRAINED_TIMESTAMP
 	if (caps.timestamp)
 	{
 		end_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 		device->register_time_interval(std::move(start_ts), std::move(end_ts), "tmem-update");
 	}
+#endif
 }
 
 void Renderer::submit_span_setup_jobs(Vulkan::CommandBuffer &cmd)
@@ -1422,15 +1426,19 @@ void Renderer::submit_span_setup_jobs(Vulkan::CommandBuffer &cmd)
 	cmd.set_specialization_constant_mask(1);
 	cmd.set_specialization_constant(0, ImplementationConstants::DefaultWorkgroupSize);
 
+#ifdef FINE_GRAINED_TIMESTAMP
 	Vulkan::QueryPoolHandle begin_ts, end_ts;
 	if (caps.timestamp)
 		begin_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+#endif
 	cmd.dispatch(stream.span_info_jobs.size(), 1, 1);
+#ifdef FINE_GRAINED_TIMESTAMP
 	if (caps.timestamp)
 	{
 		end_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 		device->register_time_interval(std::move(begin_ts), std::move(end_ts), "span-info-jobs");
 	}
+#endif
 	cmd.end_region();
 }
 
@@ -1463,9 +1471,11 @@ void Renderer::submit_tile_binning_prepass(Vulkan::CommandBuffer &cmd)
 	auto &features = device->get_device_features();
 	uint32_t subgroup_size = features.subgroup_properties.subgroupSize;
 
+#ifdef FINE_GRAINED_TIMESTAMP
 	Vulkan::QueryPoolHandle begin_ts, end_ts;
 	if (caps.timestamp)
 		begin_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+#endif
 
 	if (caps.subgroup_tile_binning_prepass)
 	{
@@ -1512,11 +1522,13 @@ void Renderer::submit_tile_binning_prepass(Vulkan::CommandBuffer &cmd)
 		             ImplementationConstants::TileHeightLowres);
 	}
 
+#ifdef FINE_GRAINED_TIMESTAMP
 	if (caps.timestamp)
 	{
 		end_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 		device->register_time_interval(std::move(begin_ts), std::move(end_ts), "tile-binning-prepass");
 	}
+#endif
 
 	cmd.enable_subgroup_size_control(false);
 	cmd.end_region();
@@ -1604,9 +1616,11 @@ void Renderer::submit_rasterization(Vulkan::CommandBuffer &cmd, Vulkan::Buffer &
 	cmd.set_specialization_constant(0, ImplementationConstants::TileWidth);
 	cmd.set_specialization_constant(1, ImplementationConstants::TileHeight);
 
+#ifdef FINE_GRAINED_TIMESTAMP
 	Vulkan::QueryPoolHandle start_ts, end_ts;
 	if (caps.timestamp)
 		start_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+#endif
 
 	for (size_t i = 0; i < stream.static_raster_state_cache.size(); i++)
 	{
@@ -1639,11 +1653,13 @@ void Renderer::submit_rasterization(Vulkan::CommandBuffer &cmd, Vulkan::Buffer &
 		cmd.dispatch_indirect(*indirect_dispatch_buffer, 4 * sizeof(uint32_t) * i);
 	}
 
+#ifdef FINE_GRAINED_TIMESTAMP
 	if (caps.timestamp)
 	{
 		end_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 		device->register_time_interval(std::move(start_ts), std::move(end_ts), "shading");
 	}
+#endif
 	cmd.end_region();
 }
 
@@ -1689,9 +1705,11 @@ void Renderer::submit_tile_binning_complete(Vulkan::CommandBuffer &cmd)
 	auto &features = device->get_device_features();
 	uint32_t subgroup_size = features.subgroup_properties.subgroupSize;
 
+#ifdef FINE_GRAINED_TIMESTAMP
 	Vulkan::QueryPoolHandle start_ts, end_ts;
 	if (caps.timestamp)
 		start_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+#endif
 
 	if (caps.subgroup_tile_binning)
 	{
@@ -1736,11 +1754,13 @@ void Renderer::submit_tile_binning_complete(Vulkan::CommandBuffer &cmd)
 		             (push.height + ImplementationConstants::TileHeight - 1) / ImplementationConstants::TileHeight);
 	}
 
+#ifdef FINE_GRAINED_TIMESTAMP
 	if (caps.timestamp)
 	{
 		end_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 		device->register_time_interval(std::move(start_ts), std::move(end_ts), "tile-binning");
 	}
+#endif
 
 	cmd.enable_subgroup_size_control(false);
 	cmd.end_region();
@@ -1755,6 +1775,11 @@ void Renderer::submit_render_pass()
 		return;
 
 	auto cmd = device->request_command_buffer(Vulkan::CommandBuffer::Type::AsyncCompute);
+
+	Vulkan::QueryPoolHandle render_pass_start, render_pass_end;
+	if (caps.timestamp)
+		render_pass_start = cmd->write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+
 	if (debug_channel)
 		cmd->begin_debug_channel(this, "Debug", 16 * 1024 * 1024);
 
@@ -1905,15 +1930,21 @@ void Renderer::submit_render_pass()
 #endif
 		}
 
+#ifdef FINE_GRAINED_TIMESTAMP
 		Vulkan::QueryPoolHandle start_ts, end_ts;
 		if (caps.timestamp)
 			start_ts = cmd->write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+#endif
+
 		cmd->dispatch((push.fb_width + 7) / 8, (push.fb_height + 7) / 8, 1);
+
+#ifdef FINE_GRAINED_TIMESTAMP
 		if (caps.timestamp)
 		{
 			end_ts = cmd->write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 			device->register_time_interval(std::move(start_ts), std::move(end_ts), "depth-blending");
 		}
+#endif
 
 		cmd->end_region();
 
@@ -1923,6 +1954,12 @@ void Renderer::submit_render_pass()
 	cmd->barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
 	             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_HOST_BIT,
 	             VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_HOST_READ_BIT);
+
+	if (caps.timestamp)
+	{
+		render_pass_end = cmd->write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+		device->register_time_interval(std::move(render_pass_start), std::move(render_pass_end), "render-pass");
+	}
 
 	Vulkan::Fence fence;
 	Vulkan::Semaphore sem[2];
