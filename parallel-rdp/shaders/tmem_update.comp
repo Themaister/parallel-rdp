@@ -20,6 +20,7 @@
  * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
+#include "debug.h"
 #include "small_types.h"
 layout(local_size_x_id = 0) in;
 
@@ -115,13 +116,33 @@ void update_tmem_32(UploadInfo info, int tmem16_index, bool upper_tmem, bool yuv
 
     if (info.mode == UPLOAD_MODE_BLOCK)
     {
-        int word_offset = pixel_offset >> 2;
+        int word_offset = pixel_offset >> 1;
 
         if (info.tmem_stride_words == 0)
         {
             // Trivial case, we can just compute T factor directly and set upload_x_xor.
             // Other than that, it works like a simple 1D upload.
-            upload_x_xor = (((word_offset * info.dxt) >> 16) & 1) << 1;
+
+            // However, if DxT is weird, we might end up in a situation where this word is written multiple times,
+            // or zero times.
+
+            int iteration_candidate_first = word_offset & ~1;
+            int iteration_candidate_second = iteration_candidate_first + 1;
+            int first_t = (iteration_candidate_first * info.dxt) >> 16;
+            int second_t = (iteration_candidate_second * info.dxt) >> 16;
+            if (first_t != second_t)
+            {
+                int iteration_candidate_first_write_index = iteration_candidate_first ^ (first_t & 1);
+                int iteration_candidate_second_write_index = iteration_candidate_second ^ (second_t & 1);
+                if (iteration_candidate_second_write_index == word_offset)
+                    upload_x_xor = (second_t & 1) << 1;
+                else if (iteration_candidate_first_write_index == word_offset)
+                    upload_x_xor = (first_t & 1) << 1;
+                else
+                    return;
+            }
+            else
+                upload_x_xor ^= (first_t & 1) << 1;
         }
         else
         {
@@ -148,7 +169,7 @@ void update_tmem_32(UploadInfo info, int tmem16_index, bool upper_tmem, bool yuv
                 {
                     found_candidate = true;
                     upload_x_xor = (computed_t & 1) << 1;
-                    pixel_offset = (candidate_solution << 2) + (pixel_offset & 3);
+                    pixel_offset = (candidate_solution << 1) + (pixel_offset & 1);
                 }
             }
 

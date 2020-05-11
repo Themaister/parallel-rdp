@@ -673,6 +673,17 @@ static bool run_conformance_load_tile(ReplayerState &state, const Arguments &arg
 				return false;
 			}
 		}
+
+		if ((vram_size == TextureSize::Bpp32 && tile_size == TextureSize::Bpp32 && !yuv) ||
+		    (vram_size == TextureSize::Bpp16 && tile_size == TextureSize::Bpp16 && yuv))
+		{
+			// Test case where DxT is uneven and gets T wraparound within the 64-bit word.
+			if (!run_conformance_load_tile(state, args, 800, 1, 0, 0, 0, op, vram_size, tile_size, 872, yuv))
+			{
+				LOG_FAILURE();
+				return false;
+			}
+		}
 	}
 
 	// Simple, aligned case, to high TMEM

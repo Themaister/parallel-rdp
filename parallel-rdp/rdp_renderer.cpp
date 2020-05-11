@@ -2216,10 +2216,7 @@ void Renderer::load_tile_iteration(uint32_t tile, const LoadTileInfo &info, uint
 				// If this error is less than 1 step of dt, we can be certain that we will get max_num iterations every time,
 				// and we can ignore the worst edge cases.
 				if (overflow_amt < dt)
-				{
 					min_num_64bpp_elements_before_wrap = max_num_64bpp_elements_before_wrap;
-					uneven_dt = false;
-				}
 			}
 
 			// Add more precision bits to DXT. We might have to shift it down if we have a meta.size fixup down below.
@@ -2228,22 +2225,15 @@ void Renderer::load_tile_iteration(uint32_t tile, const LoadTileInfo &info, uint
 
 			if (meta.size == TextureSize::Bpp32 || meta.fmt == TextureFormat::YUV)
 			{
-				if (uneven_dt)
-				{
-					LOGE("LoadBlock for Bpp32 / YUV is not supported with uneven_dt.\n");
-					return;
-				}
-
-				if (max_num_64bpp_elements_before_wrap & 1)
-				{
-					LOGE("LoadBlock for Bpp32 / YUV does not align to 64bpp tile iterations.\n");
-					return;
-				}
-
 				// We iterate twice for Bpp32 and YUV to complete a 64bpp word.
-				max_num_64bpp_elements_before_wrap >>= 1;
-				min_num_64bpp_elements_before_wrap >>= 1;
-				upload.dxt <<= 1;
+				upload.tmem_stride_words <<= 1;
+
+				// Pure, utter insanity, but no content should *ever* hit this ...
+				if (uneven_dt && meta.size != info.size)
+				{
+					LOGE("Got uneven_dt, and texture size != tile size.\n");
+					return;
+				}
 			}
 
 			// If TMEM and VRAM bpp misalign, we need to fixup this since we step too fast or slow.
