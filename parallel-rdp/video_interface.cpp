@@ -202,7 +202,7 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const S
 	status_is_aa = status_is_aa && options.vi.aa;
 	status_is_bilinear = status_is_bilinear && options.vi.scale;
 
-	status &= ~VI_CONTROL_AA_MODE_MASK;
+	status &= ~(VI_CONTROL_AA_MODE_MASK | VI_CONTROL_META_AA_BIT | VI_CONTROL_META_SCALE_BIT);
 	if (status_is_aa)
 		status |= VI_CONTROL_META_AA_BIT;
 	if (status_is_bilinear)
