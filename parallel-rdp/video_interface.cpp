@@ -196,16 +196,17 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const S
 	if (!options.vi.serrate)
 		status &= ~VI_CONTROL_SERRATE_BIT;
 
-	if (!options.vi.aa && !options.vi.scale)
-	{
-		status &= ~VI_CONTROL_AA_MODE_MASK;
-		status |= VI_CONTROL_AA_MODE_RESAMP_REPLICATE_BIT;
-	}
-	else if (!options.vi.aa && (status & (VI_CONTROL_AA_MODE_RESAMP_EXTRA_BIT | VI_CONTROL_AA_MODE_RESAMP_EXTRA_ALWAYS_BIT)) != 0)
-	{
-		status &= ~VI_CONTROL_AA_MODE_MASK;
-		status |= VI_CONTROL_AA_MODE_RESAMP_ONLY_BIT;
-	}
+	bool status_is_aa = (status & VI_CONTROL_AA_MODE_MASK) < VI_CONTROL_AA_MODE_RESAMP_ONLY_BIT;
+	bool status_is_bilinear = (status & VI_CONTROL_AA_MODE_MASK) < VI_CONTROL_AA_MODE_RESAMP_REPLICATE_BIT;
+
+	status_is_aa = status_is_aa && options.vi.aa;
+	status_is_bilinear = status_is_bilinear && options.vi.scale;
+
+	status &= ~VI_CONTROL_AA_MODE_MASK;
+	if (status_is_aa)
+		status |= VI_CONTROL_META_AA_BIT;
+	if (status_is_bilinear)
+		status |= VI_CONTROL_META_SCALE_BIT;
 
 	if (!options.vi.gamma_dither)
 		status &= ~VI_CONTROL_GAMMA_DITHER_ENABLE_BIT;
@@ -353,7 +354,7 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const S
 
 		async_cmd->set_specialization_constant_mask(3);
 		async_cmd->set_specialization_constant(0, uint32_t(rdram_size));
-		async_cmd->set_specialization_constant(1, status & (VI_CONTROL_TYPE_MASK | VI_CONTROL_AA_MODE_MASK));
+		async_cmd->set_specialization_constant(1, status & (VI_CONTROL_TYPE_MASK | VI_CONTROL_META_AA_BIT));
 
 		async_cmd->push_constants(&push, 0, sizeof(push));
 		async_cmd->dispatch((aa_width + 15) / 16, (aa_height + 15) / 16, 1);
@@ -464,7 +465,7 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const S
 		cmd->set_specialization_constant_mask(3);
 		cmd->set_specialization_constant(0, uint32_t(rdram_size));
 		cmd->set_specialization_constant(1,
-		                                 status & (VI_CONTROL_AA_MODE_MASK | VI_CONTROL_DITHER_FILTER_ENABLE_BIT));
+		                                 status & (VI_CONTROL_META_AA_BIT | VI_CONTROL_DITHER_FILTER_ENABLE_BIT));
 
 		cmd->set_texture(0, 0, vram_image->get_view());
 		cmd->draw(3);
@@ -588,7 +589,8 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const S
 		cmd->set_specialization_constant(1,
 		                                 status & (VI_CONTROL_GAMMA_ENABLE_BIT |
 		                                           VI_CONTROL_GAMMA_DITHER_ENABLE_BIT |
-		                                           VI_CONTROL_AA_MODE_MASK));
+		                                           VI_CONTROL_META_SCALE_BIT |
+		                                           VI_CONTROL_META_AA_BIT));
 		cmd->set_specialization_constant(2, uint32_t(fetch_bug));
 
 		struct Push
