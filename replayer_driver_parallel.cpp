@@ -23,6 +23,7 @@
 #include "replayer_driver.hpp"
 #include "device.hpp"
 #include "rdp_device.hpp"
+#include "aligned_alloc.hpp"
 
 namespace RDP
 {
@@ -33,7 +34,8 @@ public:
 	                 ReplayerEventInterface &iface_)
 		: player(player_)
 		, iface(iface_)
-		, gpu(device, nullptr, 0, player.get_rdram_size(), player.get_hidden_rdram_size(),
+		, host_memory(Util::memalign_calloc(64 * 1024, player.get_rdram_size()))
+		, gpu(device, host_memory.get(), 0, player.get_rdram_size(), player.get_hidden_rdram_size(),
 			  COMMAND_PROCESSOR_FLAG_HOST_VISIBLE_HIDDEN_RDRAM_BIT | COMMAND_PROCESSOR_FLAG_HOST_VISIBLE_TMEM_BIT)
 	{
 		if (!gpu.device_is_supported())
@@ -43,6 +45,14 @@ public:
 private:
 	CommandInterface &player;
 	ReplayerEventInterface &iface;
+	struct AlignedDeleter
+	{
+		void operator()(void *ptr)
+		{
+			Util::memalign_free(ptr);
+		}
+	};
+	std::unique_ptr<void, AlignedDeleter> host_memory;
 	CommandProcessor gpu;
 
 	void eof() override;
@@ -94,7 +104,7 @@ void ParallelReplayer::command(Op command_id, uint32_t num_words, const uint32_t
 uint8_t *ParallelReplayer::get_rdram()
 {
 	gpu.idle();
-	return static_cast<uint8_t *>(gpu.begin_read_rdram());
+	return static_cast<uint8_t *>(host_memory.get());
 }
 
 size_t ParallelReplayer::get_rdram_size()
