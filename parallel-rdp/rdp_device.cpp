@@ -40,7 +40,8 @@ namespace RDP
 CommandProcessor::CommandProcessor(Vulkan::Device &device_, void *rdram_ptr,
                                    size_t rdram_offset_, size_t rdram_size_, size_t hidden_rdram_size,
                                    CommandProcessorFlags flags)
-	: device(device_), rdram_offset(rdram_offset_), rdram_size(rdram_size_), timeline_worker(FenceExecutor{&thread_timeline_value})
+	: device(device_), rdram_offset(rdram_offset_), rdram_size(rdram_size_), renderer(*this),
+	  timeline_worker(FenceExecutor{&device, &thread_timeline_value})
 {
 	BufferCreateInfo info = {};
 	info.size = rdram_size;
@@ -50,7 +51,11 @@ CommandProcessor::CommandProcessor(Vulkan::Device &device_, void *rdram_ptr,
 
 	if (rdram_ptr)
 	{
-		if (device.get_device_features().supports_external_memory_host)
+		bool allow_memory_host = true;
+		if (const char *env = getenv("PARALLEL_RDP_ALLOW_EXTERNAL_HOST"))
+			allow_memory_host = strtol(env, nullptr, 0) > 0;
+
+		if (allow_memory_host && device.get_device_features().supports_external_memory_host)
 		{
 			size_t import_size = rdram_size + rdram_offset;
 			size_t align = device.get_device_features().host_memory_properties.minImportedHostPointerAlignment;
@@ -60,7 +65,24 @@ CommandProcessor::CommandProcessor(Vulkan::Device &device_, void *rdram_ptr,
 		}
 		else
 		{
-			LOGE("VK_EXT_external_memory_host is not supported on this device.\n");
+			LOGW("VK_EXT_external_memory_host is not supported on this device. Falling back to a slower path.\n");
+			is_host_coherent = false;
+			rdram_offset = 0;
+			host_rdram = static_cast<uint8_t *>(rdram_ptr) + rdram_offset_;
+
+			BufferCreateInfo device_rdram = {};
+			device_rdram.size = rdram_size * 2; // Need twice the memory amount so we can also store a writemask.
+			device_rdram.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+			                     VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+			                     VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+
+			if (device.get_gpu_properties().deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU)
+				device_rdram.domain = BufferDomain::CachedHost;
+			else
+				device_rdram.domain = BufferDomain::Device;
+
+			device_rdram.misc = BUFFER_MISC_ZERO_INITIALIZE_BIT;
+			rdram = device.create_buffer(device_rdram);
 		}
 	}
 	else
@@ -119,7 +141,7 @@ void CommandProcessor::init_renderer()
 	}
 
 	is_supported = renderer.set_device(&device);
-	renderer.set_rdram(rdram.get(), rdram_offset, rdram_size);
+	renderer.set_rdram(rdram.get(), host_rdram, rdram_offset, rdram_size, is_host_coherent);
 	renderer.set_hidden_rdram(hidden_rdram.get());
 	renderer.set_tmem(tmem.get());
 
@@ -801,7 +823,10 @@ void CommandProcessor::enqueue_command_direct(unsigned num_words, const uint32_t
 	{
 		auto fence = renderer.flush_and_signal();
 		uint64_t val = words[1] | (uint64_t(words[2]) << 32);
-		timeline_worker.push({ std::move(fence), val });
+		CoherencyOperation signal_op;
+		signal_op.fence = std::move(fence);
+		signal_op.timeline_value = val;
+		timeline_worker.push(std::move(signal_op));
 		break;
 	}
 
@@ -849,7 +874,10 @@ void CommandProcessor::end_write_hidden_rdram()
 
 size_t CommandProcessor::get_rdram_size() const
 {
-	return rdram->get_create_info().size;
+	if (is_host_coherent)
+		return rdram->get_create_info().size;
+	else
+		return rdram->get_create_info().size / 2;
 }
 
 size_t CommandProcessor::get_hidden_rdram_size() const
@@ -909,6 +937,14 @@ Vulkan::ImageHandle CommandProcessor::scanout(const ScanoutOptions &opts)
 {
 	ring.drain();
 	renderer.flush();
+
+	if (!is_host_coherent)
+	{
+		unsigned offset, length;
+		vi.scanout_memory_range(offset, length);
+		renderer.resolve_coherency_external(offset, length);
+	}
+
 	auto scanout = vi.scanout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, opts);
 	return scanout;
 }
@@ -916,8 +952,15 @@ Vulkan::ImageHandle CommandProcessor::scanout(const ScanoutOptions &opts)
 void CommandProcessor::scanout_sync(std::vector<RGBA> &colors, unsigned &width, unsigned &height)
 {
 	ring.drain();
-
 	renderer.flush();
+
+	if (!is_host_coherent)
+	{
+		unsigned offset, length;
+		vi.scanout_memory_range(offset, length);
+		renderer.resolve_coherency_external(offset, length);
+	}
+
 	auto handle = vi.scanout(VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
 
 	if (!handle)
@@ -952,18 +995,48 @@ void CommandProcessor::scanout_sync(std::vector<RGBA> &colors, unsigned &width, 
 	device.unmap_host_buffer(*readback, Vulkan::MEMORY_ACCESS_READ_BIT);
 }
 
-void CommandProcessor::FenceExecutor::notify_work_locked(const std::pair<Vulkan::Fence, uint64_t> &work)
+void CommandProcessor::FenceExecutor::notify_work_locked(const CoherencyOperation &work)
 {
-	*value = work.second;
+	if (work.timeline_value)
+		*value = work.timeline_value;
 }
 
-bool CommandProcessor::FenceExecutor::is_sentinel(const std::pair<Vulkan::Fence, uint64_t> &work) const
+bool CommandProcessor::FenceExecutor::is_sentinel(const CoherencyOperation &work) const
 {
-	return !work.first;
+	return !work.fence;
 }
 
-void CommandProcessor::FenceExecutor::perform_work(std::pair<Vulkan::Fence, uint64_t> &work)
+static void masked_memcpy(uint8_t * __restrict dst,
+                          const uint8_t * __restrict data_src,
+                          const uint8_t * __restrict masked_src,
+                          size_t size)
 {
-	work.first->wait();
+	// TODO: Masked-move SIMD.
+	for (size_t i = 0; i < size; i++)
+		if (masked_src[i] & 0x80)
+			dst[i] = data_src[i];
+}
+
+void CommandProcessor::FenceExecutor::perform_work(CoherencyOperation &work)
+{
+	work.fence->wait();
+
+	if (work.src)
+	{
+		for (auto &copy : work.copies)
+		{
+			auto *mapped_data = static_cast<uint8_t *>(device->map_host_buffer(*work.src, MEMORY_ACCESS_READ_BIT, copy.src_offset, copy.size));
+			auto *mapped_mask = static_cast<uint8_t *>(device->map_host_buffer(*work.src, MEMORY_ACCESS_READ_BIT, copy.mask_offset, copy.size));
+			masked_memcpy(work.dst + copy.dst_offset, mapped_data, mapped_mask, copy.size);
+			unsigned val = copy.counter->fetch_sub(1, std::memory_order_release);
+			(void)val;
+			assert(val > 0);
+		}
+	}
+}
+
+void CommandProcessor::enqueue_coherency_operation(CoherencyOperation &&op)
+{
+	timeline_worker.push(std::move(op));
 }
 }

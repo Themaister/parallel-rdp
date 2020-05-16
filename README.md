@@ -81,6 +81,10 @@ and how many render passes are flushed per frame.
 Force-disables use of Vulkan subgroup operations,
 which are used to optimize the tile binning algorithm.
 
+### `PARALLEL_RDP_ALLOW_EXTERNAL_HOST=0`
+
+Disables use of `VK_EXT_external_memory_host`. For testing.
+
 ## Vulkan driver requirements
 
 paraLLEl-RDP requires up-to-date Vulkan implementations. A lot of the great improvements over the previous implementation
