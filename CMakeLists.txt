@@ -31,7 +31,6 @@ endif()
 add_subdirectory(parallel-rdp)
 
 add_library(rdp-utils STATIC
-        logging.hpp
         replayer_driver.hpp replayer_driver.cpp
         replayer_driver_angrylion.cpp
         replayer_driver_parallel.cpp

@@ -23,7 +23,7 @@
 #pragma once
 
 #include <random>
-#include "logging.hpp"
+#include "util.hpp"
 #include "context.hpp"
 #include "device.hpp"
 #include "rdp_command_builder.hpp"
