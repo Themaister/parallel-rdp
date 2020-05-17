@@ -27,7 +27,7 @@
 
 #include "application.hpp"
 #include "flat_renderer.hpp"
-#include "logging.hpp"
+#include "util.hpp"
 #include "ui_manager.hpp"
 #include "rdp_command_builder.hpp"
 #include "stb_image.h"
