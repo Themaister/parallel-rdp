@@ -186,6 +186,29 @@ For that reason, this repo references a fork of the reference renderer which imp
 where appropriate. The exact formulation of the noise generator is not very interesting as long as
 correct entropy and output range is reproduced.
 
+##### Intentional differences from reference renderer
+
+Certain effects invoke "undefined behavior" in the RDP and requires cycle accuracy to resolve bit-accurately with real RDP.
+Reference renderer attempts to emulate these effects, but to reproduce this behavior breaks any form of multi-threading.
+To be able to validate dumps in a sensible way with buggy content, I modified the reference slightly to make certain
+"undefined behavior" deterministic. This doesn't meaningfully change the rendered output in the cases I've seen in the wild.
+Some of these effects would be possible to emulate,
+but at the cost of lots of added complexity and it wouldn't be quite correct anyways given the cycle accuracy issue.
+
+- CombinedColor/Alpha in first cycle is cleared to zero. Some games read this in first cycle,
+  and reference renderer will read whatever was generated last pixel.
+  This causes issues in some cases, where cycle accuracy would have caused the feedback to converge to zero over time.
+- Reading LODFrac in 1 cycle mode. This is currently ignored. The results generated seem non-sensical. Never seen this in the wild.
+- Using TexLOD in copy mode. This is currently ignored. The results generated seem non-sensical. Never seen this in the wild.
+- Reading MemoryColor in first blender cycle in 2-cycle mode. Reference seems to wait until the second cycle before updating this value,
+  despite memory coverage being updated right away. The sensible thing to do is to allow reading memory color in first cycle.
+- Alpha testing in 2-cycle mode reads combined alpha from next pixel in reference.
+  Just doing alpha testing in first cycle on current pixel is good enough.
+  If this is correct hardware behavior, I consider this a hardware bug.
+- Reading Texel1 in cycle 1 of 2-cycle mode reads the Texel0 from next pixel.
+  In the few cases I've seen this, the rendered output is slightly buggy, but it's hardly visible in motion.
+  The workaround is just to read Texel0 from current pixel which still renders fine.
+
 ### vi-conformance
 
 This is a conformance suite, except for the video interface (VI) unit.
