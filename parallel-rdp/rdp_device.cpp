@@ -24,6 +24,10 @@
 #include "rdp_common.hpp"
 #include <chrono>
 
+#ifdef __SSE2__
+#include <emmintrin.h>
+#endif
+
 #ifndef PARALLEL_RDP_SHADER_DIR
 #include "shaders/slangmosh.hpp"
 #endif
@@ -1011,10 +1015,35 @@ static void masked_memcpy(uint8_t * __restrict dst,
                           const uint8_t * __restrict masked_src,
                           size_t size)
 {
-	// TODO: Masked-move SIMD.
-	for (size_t i = 0; i < size; i++)
-		if (masked_src[i] & 0x80)
-			dst[i] = data_src[i];
+#if defined(__SSE2__)
+	for (size_t i = 0; i < size; i += 16)
+	{
+		__m128i data = _mm_loadu_si128(reinterpret_cast<const __m128i *>(data_src + i));
+		__m128i mask = _mm_loadu_si128(reinterpret_cast<const __m128i *>(masked_src + i));
+		_mm_maskmoveu_si128(data, mask, reinterpret_cast<char *>(dst + i));
+	}
+#else
+	auto * __restrict data32 = reinterpret_cast<const uint32_t *>(data_src);
+	auto * __restrict mask32 = reinterpret_cast<const uint32_t *>(masked_src);
+	auto * __restrict dst32 = reinterpret_cast<uint32_t *>(dst);
+	auto size32 = size >> 2;
+
+	for (size_t i = 0; i < size32; i++)
+	{
+		auto mask = mask32[i];
+		if (mask == ~0u)
+		{
+			dst32[i] = data32[i];
+		}
+		else if (mask)
+		{
+			// Fairly rare path.
+			for (unsigned j = 0; j < 4; j++)
+				if (masked_src[4 * i + j])
+					dst[4 * i + j] = data_src[4 * i + j];
+		}
+	}
+#endif
 }
 
 void CommandProcessor::FenceExecutor::perform_work(CoherencyOperation &work)
@@ -1032,6 +1061,10 @@ void CommandProcessor::FenceExecutor::perform_work(CoherencyOperation &work)
 			(void)val;
 			assert(val > 0);
 		}
+
+#ifdef __SSE2__
+		_mm_mfence();
+#endif
 	}
 }
 
