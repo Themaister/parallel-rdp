@@ -998,9 +998,8 @@ static bool combiner_uses_pipelined_texel1(const StaticRasterizationState &state
 
 static bool combiner_uses_lod_frac(const StaticRasterizationState &state)
 {
-	// LODFrac is only safely computed in 2cycle mode in the first combiner cycle, otherwise, it is basically garbage.
 	if ((state.flags & RASTERIZATION_MULTI_CYCLE_BIT) != 0)
-		return combiner_accesses_lod_frac(state.combiner[0]);
+		return combiner_accesses_lod_frac(state.combiner[0]) || combiner_accesses_lod_frac(state.combiner[1]);
 	else
 		return false;
 }
