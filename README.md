@@ -110,7 +110,7 @@ paraLLEl-RDP has been tested on Linux and Windows on all desktop vendors.
 - Intel Mesa (20.0.6) - Passes conformance
 - Intel Windows - Passes conformance (**CAVEAT**. Intel Windows requires 64 KiB alignment for host memory import, make sure to add some padding around RDRAM in an emulator to make this work well.)
 - AMD RADV LLVM (20.0.6) - Passes conformance
-- AMD RADV ACO - Uncertain, 8/16-bit storage is bleeding edge for ACO and master as of 2020-05-12 has a compiler regression causing segfaults in common compiler code.
+- AMD RADV ACO - Passes conformance with bleeding edge drivers and `PARALLEL_RDP_SMALL_TYPES=0`.
 - Linux AMDGPU-PRO - Passes conformance, with caveat that 8/16-bit arithmetic does not work correctly for some tests.
   paraLLEl-RDP automatically disables small integer arithmetic for proprietary AMD driver.
 - AMD Windows - Passes conformance with same caveat and workaround as AMDGPU-PRO.
