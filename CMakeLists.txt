@@ -57,6 +57,10 @@ add_granite_offline_tool(vi-conformance vi_conformance.cpp conformance_utils.hpp
 target_link_libraries(vi-conformance PRIVATE rdp-utils)
 target_compile_options(vi-conformance PRIVATE ${RDP_REPLAYER_CXX_FLAGS})
 
+add_granite_offline_tool(rdp-bench rdp_bench.cpp conformance_utils.hpp)
+target_link_libraries(rdp-bench PRIVATE rdp-utils)
+target_compile_options(rdp-bench PRIVATE ${RDP_REPLAYER_CXX_FLAGS})
+
 enable_testing()
 function(add_rdp_test NAME)
     add_test(NAME rdp-test-${NAME}

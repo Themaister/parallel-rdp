@@ -1412,6 +1412,13 @@ void Renderer::RenderBuffersUpdater::upload(Vulkan::Device &device, const Render
 	if (!gpu.triangle_setup.is_host)
 		cmd = device.request_command_buffer(Vulkan::CommandBuffer::Type::AsyncCompute);
 
+//#define UPLOAD_TRANSFER_TIMESTAMPS
+#ifdef UPLOAD_TRANSFER_TIMESTAMPS
+	Vulkan::QueryPoolHandle start_ts, end_ts;
+	if (cmd)
+		start_ts = cmd->write_timestamp(VK_PIPELINE_STAGE_TRANSFER_BIT);
+#endif
+
 	upload(cmd.get(), device, gpu.triangle_setup, cpu.triangle_setup, caches.triangle_setup);
 	upload(cmd.get(), device, gpu.attribute_setup, cpu.attribute_setup, caches.attribute_setup);
 	upload(cmd.get(), device, gpu.derived_setup, cpu.derived_setup, caches.derived_setup);
@@ -1424,6 +1431,14 @@ void Renderer::RenderBuffersUpdater::upload(Vulkan::Device &device, const Render
 	upload(cmd.get(), device, gpu.state_indices, cpu.state_indices, caches.state_indices);
 	upload(cmd.get(), device, gpu.span_info_offsets, cpu.span_info_offsets, caches.span_info_offsets);
 	upload(cmd.get(), device, gpu.span_info_jobs, cpu.span_info_jobs, caches.span_info_jobs);
+
+#ifdef UPLOAD_TRANSFER_TIMESTAMPS
+	if (cmd)
+	{
+		end_ts = cmd->write_timestamp(VK_PIPELINE_STAGE_TRANSFER_BIT);
+		device.register_time_interval(std::move(start_ts), std::move(end_ts), "render-pass-upload");
+	}
+#endif
 
 	if (cmd)
 	{
@@ -2224,7 +2239,16 @@ void Renderer::resolve_coherency_gpu_to_host(CoherencyOperation &op, Vulkan::Com
 
 		if (!copies.empty())
 		{
+//#define COHERENCY_READBACK_TIMESTAMPS
+#ifdef COHERENCY_READBACK_TIMESTAMPS
+			Vulkan::QueryPoolHandle start_ts, end_ts;
+			start_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_TRANSFER_BIT);
+#endif
 			cmd.copy_buffer(*incoherent.staging_readback, *rdram, copies.data(), copies.size());
+#ifdef COHERENCY_READBACK_TIMESTAMPS
+			end_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_TRANSFER_BIT);
+			device->register_time_interval(std::move(start_ts), std::move(end_ts), "coherency-readback");
+#endif
 			cmd.barrier(VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
 			            VK_PIPELINE_STAGE_HOST_BIT,
 			            VK_ACCESS_HOST_READ_BIT);
@@ -2369,6 +2393,12 @@ void Renderer::resolve_coherency_host_to_gpu()
 			cmd->set_storage_buffer(0, 1, *incoherent.staging_rdram);
 			cmd->set_storage_buffer(0, 2, *rdram, rdram_offset + rdram_size, rdram_size);
 
+//#define COHERENCY_MASK_TIMESTAMPS
+#ifdef COHERENCY_MASK_TIMESTAMPS
+			Vulkan::QueryPoolHandle start_ts, end_ts;
+			start_ts = cmd->write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+#endif
+
 			for (size_t i = 0; i < masked_page_copies.size(); i += 4096)
 			{
 				size_t to_copy = std::min(masked_page_copies.size() - i, size_t(4096));
@@ -2377,6 +2407,11 @@ void Renderer::resolve_coherency_host_to_gpu()
 				       to_copy * sizeof(uint32_t));
 				cmd->dispatch(to_copy, 1, 1);
 			}
+
+#ifdef COHERENCY_MASK_TIMESTAMPS
+			end_ts = cmd->write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+			device->register_time_interval(std::move(start_ts), std::move(end_ts), "coherent-mask-copy");
+#endif
 		}
 
 		// Could use FillBuffer here, but would need to use TRANSFER stage, and introduce more barriers than needed.
@@ -2410,7 +2445,17 @@ void Renderer::resolve_coherency_host_to_gpu()
 	if (!buffer_copies.empty())
 	{
 		auto cmd = device->request_command_buffer(Vulkan::CommandBuffer::Type::AsyncCompute);
+
+//#define COHERENCY_COPY_TIMESTAMPS
+#ifdef COHERENCY_COPY_TIMESTAMPS
+		Vulkan::QueryPoolHandle start_ts, end_ts;
+		start_ts = cmd->write_timestamp(VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+#endif
 		cmd->copy_buffer(*rdram, *incoherent.staging_rdram, buffer_copies.data(), buffer_copies.size());
+#ifdef COHERENCY_COPY_TIMESTAMPS
+		end_ts = cmd->write_timestamp(VK_PIPELINE_STAGE_TRANSFER_BIT);
+		device->register_time_interval(std::move(start_ts), std::move(end_ts), "coherent-copy");
+#endif
 		cmd->barrier(VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
 		             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
 		device->submit(cmd);
