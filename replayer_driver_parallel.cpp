@@ -84,7 +84,7 @@ void ParallelReplayer::signal_complete()
 void ParallelReplayer::update_rdram(const void *data, size_t size, size_t offset)
 {
 	gpu.idle();
-	memcpy(static_cast<uint8_t *>(gpu.begin_read_rdram()) + offset, data, size);
+	memcpy(static_cast<uint8_t *>(host_memory.get()) + offset, data, size);
 	gpu.end_write_rdram();
 }
 
