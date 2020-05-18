@@ -30,6 +30,8 @@
 
 namespace RDP
 {
+struct CoherencyOperation;
+
 struct SyncObject
 {
 	Vulkan::Fence fence;
@@ -317,7 +319,7 @@ private:
 	std::unique_ptr<WorkerThread<Vulkan::DeferredPipelineCompile, PipelineExecutor>> pipeline_worker;
 
 	void resolve_coherency_host_to_gpu();
-	void resolve_coherency_gpu_to_host(const Vulkan::Fence &fence, Vulkan::Semaphore sem);
+	void resolve_coherency_gpu_to_host(CoherencyOperation &op, Vulkan::CommandBuffer &cmd);
 	uint32_t get_byte_size_for_bound_color_framebuffer() const;
 	uint32_t get_byte_size_for_bound_depth_framebuffer() const;
 	void mark_pages_for_gpu_read(uint32_t base_addr, uint32_t byte_count);

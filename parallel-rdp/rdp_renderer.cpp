@@ -1411,7 +1411,7 @@ void Renderer::RenderBuffersUpdater::upload(Vulkan::Device &device, const Render
 {
 	Vulkan::CommandBufferHandle cmd;
 	if (!gpu.triangle_setup.is_host)
-		cmd = device.request_command_buffer(Vulkan::CommandBuffer::Type::AsyncTransfer);
+		cmd = device.request_command_buffer(Vulkan::CommandBuffer::Type::AsyncCompute);
 
 	upload(cmd.get(), device, gpu.triangle_setup, cpu.triangle_setup, caches.triangle_setup);
 	upload(cmd.get(), device, gpu.attribute_setup, cpu.attribute_setup, caches.attribute_setup);
@@ -1428,9 +1428,9 @@ void Renderer::RenderBuffersUpdater::upload(Vulkan::Device &device, const Render
 
 	if (cmd)
 	{
-		Vulkan::Semaphore sem;
-		device.submit(cmd, nullptr, 1, &sem);
-		device.add_wait_semaphore(Vulkan::CommandBuffer::Type::AsyncCompute, sem, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, true);
+		cmd->barrier(VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+		             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
+		device.submit(cmd);
 	}
 }
 
@@ -2020,9 +2020,9 @@ void Renderer::submit_render_pass()
 
 	cmd->barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
 	             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
-	             (need_host_barrier ? VK_PIPELINE_STAGE_HOST_BIT : 0),
+	             (need_host_barrier ? VK_PIPELINE_STAGE_HOST_BIT : VK_PIPELINE_STAGE_TRANSFER_BIT),
 	             VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT |
-	             (need_host_barrier ? VK_ACCESS_HOST_READ_BIT : 0));
+	             (need_host_barrier ? VK_ACCESS_HOST_READ_BIT : VK_ACCESS_TRANSFER_READ_BIT));
 
 	if (caps.timestamp)
 	{
@@ -2039,10 +2039,16 @@ void Renderer::submit_render_pass()
 	}
 	else
 	{
-		Vulkan::Semaphore sem;
-		device->submit(cmd, &fence, 1, &sem);
+		CoherencyOperation op;
 		if (need_render_pass)
-			resolve_coherency_gpu_to_host(fence, std::move(sem));
+			resolve_coherency_gpu_to_host(op, *cmd);
+		device->submit(cmd, &fence);
+		if (need_render_pass)
+		{
+			op.fence = fence;
+			if (!op.copies.empty())
+				processor.enqueue_coherency_operation(std::move(op));
+		}
 		sync.complete.fence = std::move(fence);
 	}
 }
@@ -2137,17 +2143,14 @@ void Renderer::lock_pages_for_gpu_write(uint32_t base_addr, uint32_t byte_count)
 	}
 }
 
-void Renderer::resolve_coherency_gpu_to_host(const Vulkan::Fence &fence, Vulkan::Semaphore sem)
+void Renderer::resolve_coherency_gpu_to_host(CoherencyOperation &op, Vulkan::CommandBuffer &cmd)
 {
-	CommandProcessor::CoherencyOperation op;
-
 	if (!incoherent.staging_readback)
 	{
 		// iGPU path.
 		op.src = rdram;
 		op.dst = incoherent.host_rdram;
 		op.timeline_value = 0;
-		op.fence = fence;
 
 		for (auto &readback : incoherent.page_to_pending_readback)
 		{
@@ -2161,7 +2164,7 @@ void Renderer::resolve_coherency_gpu_to_host(const Vulkan::Fence &fence, Vulkan:
 				index += base_index;
 				incoherent.pending_writes_for_page[index].fetch_add(1, std::memory_order_relaxed);
 
-				CommandProcessor::CoherencyCopy coherent_copy = {};
+				CoherencyCopy coherent_copy = {};
 				coherent_copy.counter = &incoherent.pending_writes_for_page[index];
 				coherent_copy.src_offset = index * ImplementationConstants::IncoherentPageSize;
 				coherent_copy.mask_offset = coherent_copy.src_offset + rdram_size;
@@ -2200,7 +2203,7 @@ void Renderer::resolve_coherency_gpu_to_host(const Vulkan::Fence &fence, Vulkan:
 				copy.size = ImplementationConstants::IncoherentPageSize;
 				copies.push_back(copy);
 
-				CommandProcessor::CoherencyCopy coherent_copy = {};
+				CoherencyCopy coherent_copy = {};
 				coherent_copy.counter = &incoherent.pending_writes_for_page[index];
 				coherent_copy.src_offset = copy.dstOffset;
 				coherent_copy.dst_offset = index * ImplementationConstants::IncoherentPageSize;
@@ -2222,19 +2225,12 @@ void Renderer::resolve_coherency_gpu_to_host(const Vulkan::Fence &fence, Vulkan:
 
 		if (!copies.empty())
 		{
-			device->add_wait_semaphore(Vulkan::CommandBuffer::Type::AsyncTransfer, std::move(sem),
-			                           VK_PIPELINE_STAGE_TRANSFER_BIT, true);
-			auto cmd = device->request_command_buffer(Vulkan::CommandBuffer::Type::AsyncTransfer);
-			cmd->copy_buffer(*incoherent.staging_readback, *rdram, copies.data(), copies.size());
-			cmd->barrier(VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
-			             VK_PIPELINE_STAGE_HOST_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
-			             VK_ACCESS_HOST_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_TRANSFER_READ_BIT);
-			device->submit(cmd, &op.fence);
+			cmd.copy_buffer(*incoherent.staging_readback, *rdram, copies.data(), copies.size());
+			cmd.barrier(VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+			            VK_PIPELINE_STAGE_HOST_BIT,
+			            VK_ACCESS_HOST_READ_BIT);
 		}
 	}
-
-	if (!op.copies.empty())
-		processor.enqueue_coherency_operation(std::move(op));
 }
 
 void Renderer::resolve_coherency_external(unsigned offset, unsigned length)
@@ -2414,12 +2410,11 @@ void Renderer::resolve_coherency_host_to_gpu()
 	// If we cannot map the device memory, use the copy queue.
 	if (!buffer_copies.empty())
 	{
-		auto cmd = device->request_command_buffer(Vulkan::CommandBuffer::Type::AsyncTransfer);
+		auto cmd = device->request_command_buffer(Vulkan::CommandBuffer::Type::AsyncCompute);
 		cmd->copy_buffer(*rdram, *incoherent.staging_rdram, buffer_copies.data(), buffer_copies.size());
-		Vulkan::Semaphore sem;
-		device->submit(cmd, nullptr, 1, &sem);
-		device->add_wait_semaphore(Vulkan::CommandBuffer::Type::AsyncCompute, std::move(sem),
-		                           VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, true);
+		cmd->barrier(VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+		             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
+		device->submit(cmd);
 	}
 }
 

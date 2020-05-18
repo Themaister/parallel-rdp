@@ -50,6 +50,25 @@ enum CommandProcessorFlagBits
 };
 using CommandProcessorFlags = uint32_t;
 
+struct CoherencyCopy
+{
+	size_t src_offset = 0;
+	size_t mask_offset = 0;
+	size_t dst_offset = 0;
+	size_t size = 0;
+	std::atomic_uint32_t *counter = nullptr;
+};
+
+struct CoherencyOperation
+{
+	Vulkan::Fence fence;
+	uint64_t timeline_value = 0;
+
+	uint8_t *dst = nullptr;
+	const Vulkan::Buffer *src = nullptr;
+	std::vector<CoherencyCopy> copies;
+};
+
 class CommandProcessor
 {
 public:
@@ -137,25 +156,6 @@ private:
 
 	uint64_t timeline_value = 0;
 	uint64_t thread_timeline_value = 0;
-
-	struct CoherencyCopy
-	{
-		size_t src_offset = 0;
-		size_t mask_offset = 0;
-		size_t dst_offset = 0;
-		size_t size = 0;
-		std::atomic_uint32_t *counter = nullptr;
-	};
-
-	struct CoherencyOperation
-	{
-		Vulkan::Fence fence;
-		uint64_t timeline_value = 0;
-
-		uint8_t *dst = nullptr;
-		const Vulkan::Buffer *src = nullptr;
-		std::vector<CoherencyCopy> copies;
-	};
 
 	struct FenceExecutor
 	{
