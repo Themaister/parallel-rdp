@@ -124,9 +124,11 @@ bool Renderer::init_caps()
 	}
 
 	bool allow_small_types = true;
+	bool forces_small_types = false;
 	if (const char *small = getenv("PARALLEL_RDP_SMALL_TYPES"))
 	{
 		allow_small_types = strtol(small, nullptr, 0) > 0;
+		forces_small_types = true;
 		LOGI("Allow small types = %d.\n", int(allow_small_types));
 	}
 
@@ -142,11 +144,17 @@ bool Renderer::init_caps()
 		return false;
 	}
 
-	if (features.supports_driver_properties)
+	// Driver workarounds here for 8/16-bit integer support.
+	if (features.supports_driver_properties && !forces_small_types)
 	{
 		if (features.driver_properties.driverID == VK_DRIVER_ID_AMD_PROPRIETARY_KHR)
 		{
 			LOGW("Current proprietary AMD driver is known to be buggy with 8/16-bit integer arithmetic, disabling support for time being.\n");
+			allow_small_types = false;
+		}
+		else if (features.driver_properties.driverID == VK_DRIVER_ID_INTEL_PROPRIETARY_WINDOWS_KHR)
+		{
+			LOGW("Current proprietary Intel Windows driver is tested to perform much better without 8/16-bit integer support.\n");
 			allow_small_types = false;
 		}
 	}
