@@ -122,6 +122,13 @@ CommandProcessor::CommandProcessor(Vulkan::Device &device_, void *rdram_ptr,
 		if (measure_stall_time)
 			LOGI("Will measure stall timings.\n");
 	}
+
+	if (const char *env = getenv("PARALLEL_RDP_SINGLE_THREADED_COMMAND"))
+	{
+		single_threaded_processing = strtol(env, nullptr, 0) > 0;
+		if (single_threaded_processing)
+			LOGI("Will use single threaded command processing.\n");
+	}
 }
 
 CommandProcessor::~CommandProcessor()
@@ -793,7 +800,10 @@ OP(sync_tile)
 
 void CommandProcessor::enqueue_command(unsigned num_words, const uint32_t *words)
 {
-	ring.enqueue_command(num_words, words);
+	if (single_threaded_processing)
+		enqueue_command_direct(num_words, words);
+	else
+		ring.enqueue_command(num_words, words);
 }
 
 void CommandProcessor::enqueue_command_direct(unsigned num_words, const uint32_t *words)

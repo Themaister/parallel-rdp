@@ -61,6 +61,7 @@ static InputPrimitive generate_input_primitive()
 static int main_inner(int, char **)
 {
 	setenv("PARALLEL_RDP_FORCE_SYNC_SHADER", "1", 1);
+	setenv("PARALLEL_RDP_SINGLE_THREADED_COMMAND", "1", 1);
 
 	ReplayerState state;
 	if (!state.init())

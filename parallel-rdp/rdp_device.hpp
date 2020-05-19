@@ -174,6 +174,7 @@ private:
 
 	uint8_t *host_rdram = nullptr;
 	bool measure_stall_time = false;
+	bool single_threaded_processing = false;
 	bool is_supported = false;
 	bool is_host_coherent = true;
 
