@@ -152,11 +152,23 @@ bool Renderer::init_caps()
 			LOGW("Current proprietary AMD driver is known to be buggy with 8/16-bit integer arithmetic, disabling support for time being.\n");
 			allow_small_types = false;
 		}
+		else if (features.driver_properties.driverID == VK_DRIVER_ID_AMD_OPEN_SOURCE_KHR)
+		{
+			LOGW("Current RADV driver is known to be slightly faster without 8/16-bit integer arithmetic.\n");
+			allow_small_types = false;
+		}
+		else if (features.driver_properties.driverID == VK_DRIVER_ID_NVIDIA_PROPRIETARY_KHR)
+		{
+			LOGW("Current NVIDIA driver is known to be slightly faster without 8/16-bit integer arithmetic.\n");
+			allow_small_types = false;
+		}
 		else if (features.driver_properties.driverID == VK_DRIVER_ID_INTEL_PROPRIETARY_WINDOWS_KHR)
 		{
 			LOGW("Current proprietary Intel Windows driver is tested to perform much better without 8/16-bit integer support.\n");
 			allow_small_types = false;
 		}
+
+		// Intel ANV *must* use small integer arithmetic, or it doesn't pass test suite.
 	}
 
 	if (!allow_small_types)
