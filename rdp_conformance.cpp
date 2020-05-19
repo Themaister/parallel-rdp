@@ -623,7 +623,7 @@ static bool run_conformance_load_tile(ReplayerState &state, const Arguments &arg
 	if (op == Op::LoadTLut)
 		state.builder.load_tlut(0, 1, 1, width, height);
 	else if (op == Op::LoadTile)
-		state.builder.load_tile_subpixels(0, (width & 3) + 4, (height & 3) + 4, (width << 2) | (height & 3), (height << 2) | (width & 3));
+		state.builder.load_tile_subpixels(0, (width & 3) + 8, (height & 3) + 8, (width << 2) | (height & 3), (height << 2) | (width & 3));
 	else if (op == Op::LoadBlock)
 		state.builder.load_block(0, 1, 3, width, dxt ? dxt : ((1 << 10) >> (height & 3)));
 	state.combined->idle();
@@ -662,10 +662,24 @@ static bool run_conformance_load_tile(ReplayerState &state, const Arguments &arg
 		}
 	}
 
-	// TMEM wrap-around case.
 	if (op == Op::LoadTile)
 	{
+		// TMEM wrap-around case.
 		if (!run_conformance_load_tile(state, args, 128, 64, 0, 128 + 8, 0, op, vram_size, tile_size, 0, yuv))
+		{
+			LOG_FAILURE();
+			return false;
+		}
+
+		// T overflow case.
+		if (!run_conformance_load_tile(state, args, 4, 1024, 0, 8, 0, op, vram_size, tile_size, 0, yuv))
+		{
+			LOG_FAILURE();
+			return false;
+		}
+
+		// Another T overflow case.
+		if (!run_conformance_load_tile(state, args, 4, 1023, 0, 8, 0, op, vram_size, tile_size, 0, yuv))
 		{
 			LOG_FAILURE();
 			return false;

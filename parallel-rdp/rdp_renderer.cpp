@@ -2557,7 +2557,24 @@ bool Renderer::tmem_upload_needs_flush(uint32_t addr) const
 void Renderer::load_tile(uint32_t tile, const LoadTileInfo &info)
 {
 	if (tmem_upload_needs_flush(info.tex_addr))
-		flush();
+		flush_queues();
+
+	// Detect noop cases.
+	if (info.mode != UploadMode::Block)
+	{
+		if ((info.thi >> 2) < (info.tlo >> 2))
+			return;
+
+		unsigned pixel_count = (((info.shi >> 2) - (info.slo >> 2)) + 1) & 0xfff;
+		if (!pixel_count)
+			return;
+	}
+	else
+	{
+		unsigned pixel_count = ((info.shi - info.slo) + 1) & 0xfff;
+		if (!pixel_count)
+			return;
+	}
 
 	if (!is_host_coherent)
 	{
@@ -2572,7 +2589,7 @@ void Renderer::load_tile(uint32_t tile, const LoadTileInfo &info)
 		}
 		else
 		{
-			unsigned max_x = (info.shi >> 2) - (info.slo >> 2);
+			unsigned max_x = ((info.shi >> 2) - (info.slo >> 2)) & 0xfff;
 			unsigned max_y = (info.thi >> 2) - (info.tlo >> 2);
 			pixel_count = max_y * info.tex_width + max_x + 1;
 			offset_pixels = (info.slo >> 2) + info.tex_width * (info.tlo >> 2);
@@ -2587,7 +2604,7 @@ void Renderer::load_tile(uint32_t tile, const LoadTileInfo &info)
 	if (info.mode == UploadMode::Tile)
 	{
 		auto &meta = tiles[tile].meta;
-		unsigned pixels_coverered_per_line = ((info.shi >> 2) - (info.slo >> 2)) + 1;
+		unsigned pixels_coverered_per_line = (((info.shi >> 2) - (info.slo >> 2)) + 1) & 0xfff;
 
 		if (meta.fmt == TextureFormat::YUV)
 			pixels_coverered_per_line *= 2;
@@ -2616,7 +2633,7 @@ void Renderer::load_tile(uint32_t tile, const LoadTileInfo &info)
 
 			unsigned max_lines_per_iteration = 0x1000u / bytes_covered_per_line;
 			// Align T-state.
-			max_lines_per_iteration &= ~1;
+			max_lines_per_iteration &= ~1u;
 
 			if (max_lines_per_iteration == 0)
 			{
@@ -2726,8 +2743,6 @@ void Renderer::load_tile_iteration(uint32_t tile, const LoadTileInfo &info, uint
 		// for quite some time to observe the fractional error accumulate.
 
 		unsigned pixel_count = (info.shi - info.slo + 1) & 0xfff;
-		if (!pixel_count)
-			return;
 
 		unsigned dt = info.thi;
 
@@ -2834,11 +2849,10 @@ void Renderer::load_tile_iteration(uint32_t tile, const LoadTileInfo &info, uint
 	{
 		upload_x = info.slo >> 2;
 		upload_y = info.tlo >> 2;
-		upload.width = ((info.shi >> 2) - (info.slo >> 2)) + 1;
+		upload.width = (((info.shi >> 2) - (info.slo >> 2)) + 1) & 0xfff;
 		upload.height = ((info.thi >> 2) - (info.tlo >> 2)) + 1;
 	}
 
-	upload.width &= 0xfff;
 	if (!upload.width)
 		return;
 
