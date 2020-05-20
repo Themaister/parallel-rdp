@@ -2332,7 +2332,6 @@ void Renderer::resolve_coherency_host_to_gpu()
 			direct = 0;
 		}
 
-		device->unmap_host_buffer(*rdram, Vulkan::MEMORY_ACCESS_WRITE_BIT);
 		auto *mapped_staging = static_cast<uint8_t *>(device->map_host_buffer(*incoherent.staging_rdram,
 		                                                                      Vulkan::MEMORY_ACCESS_WRITE_BIT));
 

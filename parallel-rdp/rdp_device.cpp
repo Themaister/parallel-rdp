@@ -103,7 +103,7 @@ CommandProcessor::CommandProcessor(Vulkan::Device &device_, void *rdram_ptr,
 
 	info.size = 0x1000;
 	info.domain = (flags & COMMAND_PROCESSOR_FLAG_HOST_VISIBLE_TMEM_BIT) != 0 ?
-	              BufferDomain::CachedHost : BufferDomain::Device;
+	              BufferDomain::Host : BufferDomain::Device;
 	tmem = device.create_buffer(info);
 
 	clear_hidden_rdram();
