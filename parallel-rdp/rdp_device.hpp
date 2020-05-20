@@ -56,7 +56,8 @@ struct CoherencyCopy
 	size_t mask_offset = 0;
 	size_t dst_offset = 0;
 	size_t size = 0;
-	std::atomic_uint32_t *counter = nullptr;
+	std::atomic_uint32_t *counter_base = nullptr;
+	unsigned counters = 0;
 };
 
 struct CoherencyOperation

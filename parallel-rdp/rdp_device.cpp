@@ -1067,9 +1067,12 @@ void CommandProcessor::FenceExecutor::perform_work(CoherencyOperation &work)
 			auto *mapped_data = static_cast<uint8_t *>(device->map_host_buffer(*work.src, MEMORY_ACCESS_READ_BIT, copy.src_offset, copy.size));
 			auto *mapped_mask = static_cast<uint8_t *>(device->map_host_buffer(*work.src, MEMORY_ACCESS_READ_BIT, copy.mask_offset, copy.size));
 			masked_memcpy(work.dst + copy.dst_offset, mapped_data, mapped_mask, copy.size);
-			unsigned val = copy.counter->fetch_sub(1, std::memory_order_release);
-			(void)val;
-			assert(val > 0);
+			for (unsigned i = 0; i < copy.counters; i++)
+			{
+				unsigned val = copy.counter_base[i].fetch_sub(1, std::memory_order_release);
+				(void)val;
+				assert(val > 0);
+			}
 		}
 
 #ifdef __SSE2__
