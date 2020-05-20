@@ -28,6 +28,8 @@
 #include "device.hpp"
 #include "rdp_command_builder.hpp"
 #include "replayer_driver.hpp"
+#include "os_filesystem.hpp"
+#include "global_managers.hpp"
 #include <string.h>
 #define LOG_FAILURE() LOGE("Failed at %s:%d.\n", __FILE__, __LINE__)
 
@@ -344,5 +346,37 @@ static inline bool suite_compare_glob(const std::string &suite, const std::strin
 static inline bool suite_compare(const std::string &suite, const std::string &cmp)
 {
 	return suite == cmp;
+}
+
+static inline void setup_filesystems()
+{
+	using namespace Granite;
+	using namespace Granite::Global;
+	using namespace Granite::Path;
+
+	auto exec_path = get_executable_path();
+	auto base_dir = basedir(exec_path);
+	auto rdp_dir = join(base_dir, "shaders");
+	auto builtin_dir = join(base_dir, "builtin");
+	auto cache_dir = join(base_dir, "cache");
+	bool use_exec_path_cache_dir = false;
+
+	FileStat s = {};
+	if (filesystem()->stat(rdp_dir, s) && s.type == PathType::Directory)
+	{
+		filesystem()->register_protocol("rdp", std::make_unique<OSFilesystem>(rdp_dir));
+		LOGI("Overriding RDP shader directory to %s.\n", rdp_dir.c_str());
+		use_exec_path_cache_dir = true;
+	}
+
+	if (filesystem()->stat(builtin_dir, s) && s.type == PathType::Directory)
+	{
+		filesystem()->register_protocol("builtin", std::make_unique<OSFilesystem>(builtin_dir));
+		LOGI("Overriding builtin shader directory to %s.\n", builtin_dir.c_str());
+		use_exec_path_cache_dir = true;
+	}
+
+	if (use_exec_path_cache_dir)
+		filesystem()->register_protocol("cache", std::make_unique<OSFilesystem>(cache_dir));
 }
 }

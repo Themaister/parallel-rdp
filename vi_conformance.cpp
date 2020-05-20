@@ -345,6 +345,7 @@ static int main_inner(int argc, char **argv)
 int main(int argc, char **argv)
 {
 	Granite::Global::init();
+	setup_filesystems();
 	int ret = main_inner(argc, argv);
 	Granite::Global::deinit();
 	return ret;
