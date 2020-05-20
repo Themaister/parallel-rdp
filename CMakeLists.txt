@@ -1,6 +1,13 @@
 cmake_minimum_required(VERSION 3.5)
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_C_STANDARD 99)
+
+if (BUILD_ANDROID)
+	set(CMAKE_TOOLCHAIN_FILE $ENV{ANDROID_HOME}/ndk-bundle/build/cmake/android.toolchain.cmake)
+	set(ANDROID_PLATFORM android-26)
+	set(ANDROID_ABI arm64-v8a)
+endif()
+
 project(rdp-replayer LANGUAGES CXX C)
 
 if (CMAKE_COMPILER_IS_GNUCXX OR (${CMAKE_CXX_COMPILER_ID} MATCHES "Clang"))
