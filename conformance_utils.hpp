@@ -30,6 +30,9 @@
 #include "replayer_driver.hpp"
 #include "os_filesystem.hpp"
 #include "global_managers.hpp"
+#ifdef ANDROID
+#include "android.hpp"
+#endif
 #include <string.h>
 #define LOG_FAILURE() LOGE("Failed at %s:%d.\n", __FILE__, __LINE__)
 
@@ -354,6 +357,10 @@ static inline void setup_filesystems()
 	using namespace Granite::Global;
 	using namespace Granite::Path;
 
+#ifdef ANDROID
+	filesystem()->register_protocol("rdp", std::make_unique<AssetManagerFilesystem>(""));
+	LOGI("Overriding Android RDP filesystem.\n");
+#else
 	auto exec_path = get_executable_path();
 	auto base_dir = basedir(exec_path);
 	auto rdp_dir = join(base_dir, "shaders");
@@ -378,5 +385,6 @@ static inline void setup_filesystems()
 
 	if (use_exec_path_cache_dir)
 		filesystem()->register_protocol("cache", std::make_unique<OSFilesystem>(cache_dir));
+#endif
 }
 }

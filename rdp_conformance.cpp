@@ -20,6 +20,7 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+#include "application.hpp"
 #include "conformance_utils.hpp"
 #include "rdp_dump.hpp"
 #include "rdp_command_builder.hpp"
@@ -106,7 +107,7 @@ struct Arguments
 	std::string suite_glob;
 	std::string suite;
 	unsigned lo = 0;
-	unsigned hi = 1024;
+	unsigned hi = 10;
 	bool verbose = false;
 	bool capture = false;
 };
@@ -1581,6 +1582,17 @@ static int main_inner(int argc, char **argv)
 	return EXIT_SUCCESS;
 }
 
+#ifdef WRAPPER_CLI
+namespace Granite
+{
+Application *application_create(int argc, char **argv)
+{
+	application_dummy();
+	setup_filesystems();
+	return new ApplicationCLIWrapper(main_inner, argc, argv);
+}
+}
+#else
 int main(int argc, char **argv)
 {
 	Granite::Global::init();
@@ -1589,3 +1601,4 @@ int main(int argc, char **argv)
 	Granite::Global::deinit();
 	return ret;
 }
+#endif
