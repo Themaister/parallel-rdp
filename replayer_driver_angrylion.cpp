@@ -81,6 +81,14 @@ public:
 	{
 	}
 
+	void flush_caches() override
+	{
+	}
+
+	void invalidate_caches() override
+	{
+	}
+
 private:
 	CommandInterface &player;
 	ReplayerEventInterface &iface;

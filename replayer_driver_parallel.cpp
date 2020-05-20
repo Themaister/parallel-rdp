@@ -68,6 +68,9 @@ private:
 	size_t get_hidden_rdram_size() override;
 	uint8_t *get_tmem() override;
 	void idle() override;
+
+	void invalidate_caches() override;
+	void flush_caches() override;
 };
 
 void ParallelReplayer::eof()
@@ -86,6 +89,18 @@ void ParallelReplayer::update_rdram(const void *data, size_t size, size_t offset
 	gpu.idle();
 	memcpy(static_cast<uint8_t *>(host_memory.get()) + offset, data, size);
 	gpu.end_write_rdram();
+}
+
+void ParallelReplayer::flush_caches()
+{
+	gpu.end_write_rdram();
+	gpu.end_write_hidden_rdram();
+}
+
+void ParallelReplayer::invalidate_caches()
+{
+	gpu.begin_read_rdram();
+	gpu.begin_read_hidden_rdram();
 }
 
 void ParallelReplayer::update_hidden_rdram(const void *data, size_t size, size_t offset)

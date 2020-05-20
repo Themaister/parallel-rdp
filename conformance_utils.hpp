@@ -309,6 +309,8 @@ static inline bool compare_image(const std::vector<Interface::RGBA> &reference,
 
 static inline void randomize_rdram(RNG &rng, ReplayerDriver &reference, ReplayerDriver &gpu)
 {
+	gpu.invalidate_caches();
+
 	auto *rdram_reference = reinterpret_cast<uint32_t *>(reference.get_rdram());
 	auto *rdram_gpu = reinterpret_cast<uint32_t *>(gpu.get_rdram());
 	size_t size = reference.get_rdram_size() >> 2;
@@ -331,12 +333,16 @@ static inline void randomize_rdram(RNG &rng, ReplayerDriver &reference, Replayer
 		rdram_reference[i] = v;
 		rdram_gpu[i] = v;
 	}
+
+	gpu.flush_caches();
 }
 
 static inline void clear_rdram(ReplayerDriver &driver)
 {
+	driver.invalidate_caches();
 	memset(driver.get_rdram(), 0, driver.get_rdram_size());
 	memset(driver.get_hidden_rdram(), 0, driver.get_hidden_rdram_size());
+	driver.flush_caches();
 }
 
 static inline bool suite_compare_glob(const std::string &suite, const std::string &cmp)

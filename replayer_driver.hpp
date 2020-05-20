@@ -71,6 +71,9 @@ public:
 	virtual size_t get_hidden_rdram_size() = 0;
 	virtual uint8_t *get_tmem() = 0;
 	virtual void idle() = 0;
+
+	virtual void flush_caches() = 0;
+	virtual void invalidate_caches() = 0;
 };
 
 static inline bool command_is_draw_call(Op cmd_id)
