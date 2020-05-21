@@ -23,7 +23,7 @@
 #include "conformance_utils.hpp"
 #include "global_managers.hpp"
 #include "cli_parser.hpp"
-#include "application.hpp"
+#include "application_cli_wrapper.hpp"
 
 using namespace RDP;
 

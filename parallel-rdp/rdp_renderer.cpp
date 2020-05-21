@@ -22,7 +22,8 @@
 
 #include "rdp_renderer.hpp"
 #include "rdp_device.hpp"
-#include "util.hpp"
+#include "logging.hpp"
+#include "bitops.hpp"
 #include "luts.hpp"
 #ifdef PARALLEL_RDP_SHADER_DIR
 #include "global_managers.hpp"
@@ -50,7 +51,13 @@ void Renderer::set_shader_bank(const ShaderBank *bank)
 bool Renderer::set_device(Vulkan::Device *device_)
 {
 	device = device_;
+
+#ifdef PARALLEL_RDP_SHADER_DIR
+	pipeline_worker.reset(new WorkerThread<Vulkan::DeferredPipelineCompile, PipelineExecutor>(
+			Granite::Global::create_thread_context(), { device }));
+#else
 	pipeline_worker.reset(new WorkerThread<Vulkan::DeferredPipelineCompile, PipelineExecutor>({ device }));
+#endif
 
 #ifdef PARALLEL_RDP_SHADER_DIR
 	if (!Granite::Global::filesystem()->get_backend("rdp"))

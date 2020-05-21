@@ -20,7 +20,7 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#include "application.hpp"
+#include "application_cli_wrapper.hpp"
 #include "conformance_utils.hpp"
 #include "rdp_dump.hpp"
 #include "rdp_command_builder.hpp"

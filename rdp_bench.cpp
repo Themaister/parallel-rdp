@@ -24,7 +24,7 @@
 #include "global_managers.hpp"
 #include "cli_parser.hpp"
 #include "timer.hpp"
-#include "application.hpp"
+#include "application_cli_wrapper.hpp"
 #include <stdlib.h>
 
 using namespace RDP;

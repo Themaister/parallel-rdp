@@ -31,7 +31,7 @@ extern uint8_t *get_tmem(void);
 }
 
 #include "replayer_driver.hpp"
-#include "util.hpp"
+#include "logging.hpp"
 #include "rdp_common.hpp"
 #include <string.h>
 #include <stdarg.h>

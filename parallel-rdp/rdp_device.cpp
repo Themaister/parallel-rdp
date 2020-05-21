@@ -45,7 +45,11 @@ CommandProcessor::CommandProcessor(Vulkan::Device &device_, void *rdram_ptr,
                                    size_t rdram_offset_, size_t rdram_size_, size_t hidden_rdram_size,
                                    CommandProcessorFlags flags)
 	: device(device_), rdram_offset(rdram_offset_), rdram_size(rdram_size_), renderer(*this),
+#ifdef PARALLEL_RDP_SHADER_DIR
+	  timeline_worker(Granite::Global::create_thread_context(), FenceExecutor{&device, &thread_timeline_value})
+#else
 	  timeline_worker(FenceExecutor{&device, &thread_timeline_value})
+#endif
 {
 	BufferCreateInfo info = {};
 	info.size = rdram_size;

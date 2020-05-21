@@ -15,4 +15,4 @@ add_library(parallel-rdp STATIC
 target_link_libraries(parallel-rdp PRIVATE granite)
 target_compile_options(parallel-rdp PRIVATE ${PARALLEL_RDP_CXX_FLAGS})
 target_include_directories(parallel-rdp PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_compile_definitions(parallel-rdp PRIVATE PARALLEL_RDP_SHADER_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/shaders\")
+target_compile_definitions(parallel-rdp PUBLIC PARALLEL_RDP_SHADER_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/shaders\")
