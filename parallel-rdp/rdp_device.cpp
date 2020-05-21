@@ -50,7 +50,7 @@ CommandProcessor::CommandProcessor(Vulkan::Device &device_, void *rdram_ptr,
 	BufferCreateInfo info = {};
 	info.size = rdram_size;
 	info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-	info.domain = BufferDomain::CachedHost;
+	info.domain = BufferDomain::CachedCoherentHostPreferCached;
 	info.misc = BUFFER_MISC_ZERO_INITIALIZE_BIT;
 
 	if (rdram_ptr)
@@ -81,7 +81,7 @@ CommandProcessor::CommandProcessor(Vulkan::Device &device_, void *rdram_ptr,
 			                     VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
 
 			if (device.get_gpu_properties().deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU)
-				device_rdram.domain = BufferDomain::CachedHost;
+				device_rdram.domain = BufferDomain::CachedCoherentHostPreferCached;
 			else
 				device_rdram.domain = BufferDomain::Device;
 
@@ -96,14 +96,16 @@ CommandProcessor::CommandProcessor(Vulkan::Device &device_, void *rdram_ptr,
 		LOGE("Failed to allocate RDRAM.\n");
 
 	info.size = hidden_rdram_size;
+	// Should be CachedHost, but seeing some insane bug on incoherent Arm systems for time being,
+	// so just forcing coherent memory here for now. Not sure what is going on.
 	info.domain = (flags & COMMAND_PROCESSOR_FLAG_HOST_VISIBLE_HIDDEN_RDRAM_BIT) != 0 ?
-	              BufferDomain::CachedHost : BufferDomain::Device;
+	              BufferDomain::CachedCoherentHostPreferCoherent : BufferDomain::Device;
 	info.misc = 0;
 	hidden_rdram = device.create_buffer(info);
 
 	info.size = 0x1000;
 	info.domain = (flags & COMMAND_PROCESSOR_FLAG_HOST_VISIBLE_TMEM_BIT) != 0 ?
-	              BufferDomain::Host : BufferDomain::Device;
+	              BufferDomain::CachedCoherentHostPreferCoherent : BufferDomain::Device;
 	tmem = device.create_buffer(info);
 
 	clear_hidden_rdram();
@@ -991,7 +993,7 @@ void CommandProcessor::scanout_sync(std::vector<RGBA> &colors, unsigned &width, 
 	Vulkan::BufferCreateInfo info = {};
 	info.size = width * height * sizeof(uint32_t);
 	info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-	info.domain = Vulkan::BufferDomain::CachedHost;
+	info.domain = Vulkan::BufferDomain::CachedCoherentHostPreferCached;
 	auto readback = device.create_buffer(info);
 
 	auto cmd = device.request_command_buffer();

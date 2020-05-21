@@ -549,7 +549,7 @@ void Renderer::set_rdram(Vulkan::Buffer *buffer, uint8_t *host_rdram, size_t off
 		{
 			// If we cannot map RDRAM, we need a staging readback buffer.
 			Vulkan::BufferCreateInfo readback_info = {};
-			readback_info.domain = Vulkan::BufferDomain::CachedHost;
+			readback_info.domain = Vulkan::BufferDomain::CachedCoherentHostPreferCached;
 			readback_info.size = rdram_size * Limits::NumSyncStates;
 			readback_info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
 			incoherent.staging_readback = device->create_buffer(readback_info);
