@@ -80,15 +80,20 @@ static bool run_conformance_vi(ReplayerState &state, const Arguments &args, cons
 	state.combined->set_vi_register(VIRegister::Origin, 567123);
 	state.combined->set_vi_register(VIRegister::Width, 100);
 	state.combined->set_vi_register(VIRegister::VSync, variant.pal ? VI_V_SYNC_PAL : VI_V_SYNC_NTSC);
-	state.combined->set_vi_register(VIRegister::HStart,
-	                                make_vi_start_register(variant.pal ? VI_H_OFFSET_PAL : VI_H_OFFSET_NTSC,
-	                                                       (variant.pal ? VI_H_OFFSET_PAL : VI_H_OFFSET_NTSC) + 640));
 	state.combined->set_vi_register(VIRegister::VStart,
 	                                make_vi_start_register(variant.pal ? VI_V_OFFSET_PAL : VI_V_OFFSET_NTSC,
 	                                                       (variant.pal ? VI_V_OFFSET_PAL : VI_V_OFFSET_NTSC) + 224 * 2));
 	state.combined->set_vi_register(VIRegister::XScale, make_vi_scale_register(variant.x_scale, variant.x_bias));
 	state.combined->set_vi_register(VIRegister::YScale, make_vi_scale_register(variant.y_scale, variant.y_bias));
 
+	// Ensure persistent state is cleared out between tests.
+	state.combined->set_vi_register(VIRegister::HStart,
+	                                make_vi_start_register(640, 0));
+	state.combined->end_frame();
+
+	state.combined->set_vi_register(VIRegister::HStart,
+	                                make_vi_start_register(variant.pal ? VI_H_OFFSET_PAL : VI_H_OFFSET_NTSC,
+	                                                       (variant.pal ? VI_H_OFFSET_PAL : VI_H_OFFSET_NTSC) + 640));
 	RNG rng;
 	for (unsigned i = 0; i <= args.hi; i++)
 	{
