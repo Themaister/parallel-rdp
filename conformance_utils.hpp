@@ -322,9 +322,6 @@ static inline void randomize_rdram(RNG &rng, ReplayerDriver &reference, Replayer
 		rdram_gpu[i] = v;
 	}
 
-	gpu.flush_caches();
-	gpu.invalidate_caches();
-
 	rdram_reference = reinterpret_cast<uint32_t *>(reference.get_hidden_rdram());
 	rdram_gpu = reinterpret_cast<uint32_t *>(gpu.get_hidden_rdram());
 	size = reference.get_hidden_rdram_size() >> 2;

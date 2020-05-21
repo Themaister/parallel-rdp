@@ -189,7 +189,7 @@ void CommandProcessor::clear_tmem()
 
 void CommandProcessor::clear_buffer(Vulkan::Buffer &buffer, uint32_t value)
 {
-	if (buffer.get_create_info().domain == BufferDomain::Device)
+	if (!buffer.get_allocation().is_host_allocation())
 	{
 		auto cmd = device.request_command_buffer();
 		cmd->fill_buffer(buffer, value);
