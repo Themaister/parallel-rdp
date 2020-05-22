@@ -523,7 +523,7 @@ static bool run_conformance_rasterization(ReplayerState &state, const Arguments 
 		if (i >= args.lo)
 		{
 			if (args.capture)
-				state.device.begin_renderdoc_capture();
+				state.device->begin_renderdoc_capture();
 
 			for (unsigned j = 0; j < variant.primitive_count; j++)
 			{
@@ -560,7 +560,7 @@ static bool run_conformance_rasterization(ReplayerState &state, const Arguments 
 
 			state.builder.end_frame();
 			if (args.capture)
-				state.device.end_renderdoc_capture();
+				state.device->end_renderdoc_capture();
 
 			if (!compare_rdram(*state.reference, *state.gpu))
 			{
@@ -568,7 +568,7 @@ static bool run_conformance_rasterization(ReplayerState &state, const Arguments 
 				return false;
 			}
 
-			state.device.next_frame_context();
+			state.device->next_frame_context();
 		}
 		else
 		{
@@ -627,7 +627,7 @@ static bool run_conformance_load_tile(ReplayerState &state, const Arguments &arg
 	else if (op == Op::LoadBlock)
 		state.builder.load_block(0, 1, 3, width, dxt ? dxt : ((1 << 10) >> (height & 3)));
 	state.combined->idle();
-	state.device.next_frame_context();
+	state.device->next_frame_context();
 
 	for (unsigned i = 0; i < 2048; i++)
 	{

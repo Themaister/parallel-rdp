@@ -59,20 +59,18 @@ static InputPrimitive generate_input_primitive()
 	return prim;
 }
 
-static int main_inner(int, char **)
+static int main_inner(Vulkan::Device *device, int, char **)
 {
 #ifdef _WIN32
 	_putenv("PARALLEL_RDP_FORCE_SYNC_SHADER=1");
 	_putenv("PARALLEL_RDP_SINGLE_THREADED_COMMAND=1");
-	_putenv("PARALLEL_RDP_BENCH=1");
 #else
 	setenv("PARALLEL_RDP_FORCE_SYNC_SHADER", "1", 1);
 	setenv("PARALLEL_RDP_SINGLE_THREADED_COMMAND", "1", 1);
-	setenv("PARALLEL_RDP_BENCH", "1", 1);
 #endif
 
 	ReplayerState state;
-	if (!state.init())
+	if (!state.init(device))
 		return EXIT_FAILURE;
 
 	const unsigned iterations = 10000;
@@ -111,14 +109,12 @@ static int main_inner(int, char **)
 		state.builder.set_color_image(TextureFormat::RGBA, TextureSize::Bpp16, (iter & 3) * 512, width);
 		for (unsigned count = 0; count < num_quads_per_frame; count++)
 			state.builder.draw_triangle(prim);
-		state.device.next_frame_context();
+		state.device->next_frame_context();
 		timestamps[iter] = Util::get_current_time_nsecs();
-
-		if ((iter & 127) == 127)
-			LOGI("...\n");
+		LOGI("Completed iteration %u / %u.\n", iter, iterations);
 	}
 
-	state.device.wait_idle();
+	state.device->wait_idle();
 
 	uint64_t delta_ns = timestamps[iterations - 3] - timestamps[3];
 	double delta_s = 1e-9 * double(delta_ns);
@@ -146,7 +142,7 @@ int main(int argc, char **argv)
 {
 	Granite::Global::init();
 	setup_filesystems();
-	int ret = main_inner(argc, argv);
+	int ret = main_inner(nullptr, argc, argv);
 	Granite::Global::deinit();
 	return ret;
 }

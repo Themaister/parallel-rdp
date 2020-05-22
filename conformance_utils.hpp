@@ -133,46 +133,63 @@ struct ReplayerState
 	~ReplayerState()
 	{
 		// Ensure that debug callbacks are flushed.
-		device.wait_idle();
+		device->wait_idle();
 	}
 
 	inline bool init();
+	inline bool init(Vulkan::Device *device);
 	inline bool init(DumpPlayer &dump);
 	Vulkan::Context context;
-	Vulkan::Device device;
+	std::unique_ptr<Vulkan::Device> owned_device;
+	Vulkan::Device *device = nullptr;
 	std::unique_ptr<ReplayerDriver> reference, gpu;
 	std::unique_ptr<ReplayerDriver> combined;
 	CommandBuilder builder;
 	Interface iface;
 
-	inline bool init_common();
+	inline bool init_common(Vulkan::Device *custom_device = nullptr);
 };
 
-bool ReplayerState::init_common()
+bool ReplayerState::init_common(Vulkan::Device *custom_device)
 {
-	if (!Vulkan::Context::init_loader(nullptr))
+	if (custom_device)
 	{
-		LOGE("Failed to init Vulkan loader.\n");
-		return false;
+		device = custom_device;
 	}
+	else
+	{
+		owned_device.reset(new Vulkan::Device);
+		device = owned_device.get();
 
-	if (!context.init_instance_and_device(nullptr, 0, nullptr, 0, Vulkan::CONTEXT_CREATION_DISABLE_BINDLESS_BIT))
-	{
-		LOGE("Failed to create Vulkan context.\n");
-		return false;
+		if (!Vulkan::Context::init_loader(nullptr))
+		{
+			LOGE("Failed to init Vulkan loader.\n");
+			return false;
+		}
+
+		if (!context.init_instance_and_device(nullptr, 0, nullptr, 0, Vulkan::CONTEXT_CREATION_DISABLE_BINDLESS_BIT))
+		{
+			LOGE("Failed to create Vulkan context.\n");
+			return false;
+		}
+		device->set_context(context);
 	}
-	device.set_context(context);
 
 	return true;
 }
 
 bool ReplayerState::init()
 {
-	if (!init_common())
+	return init(nullptr);
+}
+
+bool ReplayerState::init(Vulkan::Device *device_)
+{
+	if (!init_common(device_))
 		return false;
 
 	reference = create_replayer_driver_angrylion(builder, iface);
-	gpu = create_replayer_driver_parallel(device, builder, iface);
+	gpu = create_replayer_driver_parallel(*device, builder, iface, device_ != nullptr);
 	combined = create_side_by_side_driver(reference.get(), gpu.get(), iface);
 	builder.set_command_interface(combined.get());
 	return true;
@@ -184,7 +201,7 @@ bool ReplayerState::init(DumpPlayer &dump)
 		return false;
 
 	reference = create_replayer_driver_angrylion(dump, iface);
-	gpu = create_replayer_driver_parallel(device, dump, iface);
+	gpu = create_replayer_driver_parallel(*device, dump, iface);
 	combined = create_side_by_side_driver(reference.get(), gpu.get(), iface);
 	dump.set_command_interface(combined.get());
 	return true;

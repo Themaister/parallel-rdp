@@ -83,7 +83,7 @@ static int main_inner(int argc, char *argv[])
 	while (!state.iface.is_eof)
 	{
 		if (capture)
-			state.device.begin_renderdoc_capture();
+			state.device->begin_renderdoc_capture();
 
 		unsigned current_draw_count = iface.draw_calls_for_context[1];
 		unsigned current_frame_count = iface.frame_count_for_context[1];
@@ -96,7 +96,7 @@ static int main_inner(int argc, char *argv[])
 		}
 
 		if (capture)
-			state.device.end_renderdoc_capture();
+			state.device->end_renderdoc_capture();
 
 		uint32_t fault_addr;
 		bool fault_hidden;
@@ -185,7 +185,7 @@ static int main_inner(int argc, char *argv[])
 			return EXIT_FAILURE;
 		}
 
-		state.device.next_frame_context();
+		state.device->next_frame_context();
 
 		if (current_frame_count >= begin_frame)
 		{

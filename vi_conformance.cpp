@@ -124,10 +124,10 @@ static bool run_conformance_vi(ReplayerState &state, const Arguments &args, cons
 		if (i >= args.lo)
 		{
 			if (args.capture)
-				state.device.begin_renderdoc_capture();
+				state.device->begin_renderdoc_capture();
 			state.combined->end_frame();
 			if (args.capture)
-				state.device.end_renderdoc_capture();
+				state.device->end_renderdoc_capture();
 
 			if (!compare_image(state.iface.scanout_result[0], state.iface.widths[0], state.iface.heights[0],
 			                   state.iface.scanout_result[1], state.iface.widths[1], state.iface.heights[1]))
@@ -136,7 +136,7 @@ static bool run_conformance_vi(ReplayerState &state, const Arguments &args, cons
 				return false;
 			}
 
-			state.device.next_frame_context();
+			state.device->next_frame_context();
 		}
 
 		if (args.verbose)

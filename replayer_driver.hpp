@@ -109,6 +109,7 @@ struct ReplayerEventInterface
 };
 
 std::unique_ptr<ReplayerDriver> create_replayer_driver_angrylion(CommandInterface &player, ReplayerEventInterface &iface);
-std::unique_ptr<ReplayerDriver> create_replayer_driver_parallel(Vulkan::Device &device, CommandInterface &player, ReplayerEventInterface &iface);
+std::unique_ptr<ReplayerDriver> create_replayer_driver_parallel(Vulkan::Device &device, CommandInterface &player, ReplayerEventInterface &iface,
+                                                                bool benchmarking = false);
 std::unique_ptr<ReplayerDriver> create_side_by_side_driver(ReplayerDriver *first, ReplayerDriver *second, ReplayerEventInterface &iface);
 }

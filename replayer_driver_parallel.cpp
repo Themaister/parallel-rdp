@@ -31,12 +31,12 @@ class ParallelReplayer : public ReplayerDriver
 {
 public:
 	ParallelReplayer(Vulkan::Device &device, CommandInterface &player_,
-	                 ReplayerEventInterface &iface_)
+	                 ReplayerEventInterface &iface_, bool benchmarking)
 		: player(player_)
 		, iface(iface_)
 		, host_memory(Util::memalign_calloc(64 * 1024, player.get_rdram_size()))
 		, gpu(device, host_memory.get(), 0, player.get_rdram_size(), player.get_hidden_rdram_size(),
-			  COMMAND_PROCESSOR_FLAG_HOST_VISIBLE_HIDDEN_RDRAM_BIT | COMMAND_PROCESSOR_FLAG_HOST_VISIBLE_TMEM_BIT)
+			  benchmarking ? 0 : (COMMAND_PROCESSOR_FLAG_HOST_VISIBLE_HIDDEN_RDRAM_BIT | COMMAND_PROCESSOR_FLAG_HOST_VISIBLE_TMEM_BIT))
 	{
 		if (!gpu.device_is_supported())
 			throw std::runtime_error("GPU is not supported.");
@@ -162,8 +162,9 @@ void ParallelReplayer::set_vi_register(VIRegister index, uint32_t value)
 	gpu.set_vi_register(index, value);
 }
 
-std::unique_ptr<ReplayerDriver> create_replayer_driver_parallel(Vulkan::Device &device, CommandInterface &player, ReplayerEventInterface &iface)
+std::unique_ptr<ReplayerDriver> create_replayer_driver_parallel(Vulkan::Device &device, CommandInterface &player, ReplayerEventInterface &iface,
+                                                                bool benchmarking)
 {
-	return std::make_unique<ParallelReplayer>(device, player, iface);
+	return std::make_unique<ParallelReplayer>(device, player, iface, benchmarking);
 }
 }
