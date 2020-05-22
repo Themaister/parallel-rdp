@@ -24,6 +24,7 @@
 #include "global_managers.hpp"
 #include "cli_parser.hpp"
 #include "timer.hpp"
+#include "application_cli_wrapper.hpp"
 #include <stdlib.h>
 
 using namespace RDP;
@@ -58,7 +59,7 @@ static InputPrimitive generate_input_primitive()
 	return prim;
 }
 
-static int main_inner(int, char **)
+static int main_inner(Vulkan::Device *device, int, char **)
 {
 #ifdef _WIN32
 	_putenv("PARALLEL_RDP_FORCE_SYNC_SHADER=1");
@@ -69,11 +70,11 @@ static int main_inner(int, char **)
 #endif
 
 	ReplayerState state;
-	if (!state.init())
+	if (!state.init(device))
 		return EXIT_FAILURE;
 
-	const unsigned iterations = 100;
-	const unsigned num_quads_per_frame = 100;
+	const unsigned iterations = 10000;
+	const unsigned num_quads_per_frame = 10;
 	const unsigned width = 512;
 	const unsigned height = 256;
 
@@ -108,16 +109,17 @@ static int main_inner(int, char **)
 		state.builder.set_color_image(TextureFormat::RGBA, TextureSize::Bpp16, (iter & 3) * 512, width);
 		for (unsigned count = 0; count < num_quads_per_frame; count++)
 			state.builder.draw_triangle(prim);
-		state.device.next_frame_context();
+		state.device->next_frame_context();
 		timestamps[iter] = Util::get_current_time_nsecs();
+		LOGI("Completed iteration %u / %u.\n", iter, iterations);
 	}
 
-	state.device.wait_idle();
+	state.device->wait_idle();
 
 	uint64_t delta_ns = timestamps[iterations - 3] - timestamps[3];
 	double delta_s = 1e-9 * double(delta_ns);
-	unsigned num_frames = iterations - 6;
-	unsigned num_pixels = num_frames * num_quads_per_frame * width * height;
+	uint64_t num_frames = iterations - 6;
+	uint64_t num_pixels = num_frames * num_quads_per_frame * width * height;
 	double time_per_frame = (1e-9 * double(delta_ns)) / double(num_frames);
 
 	LOGI("Time per frame: %.3f ms.\n", 1000.0 * time_per_frame);
@@ -125,10 +127,23 @@ static int main_inner(int, char **)
 	return EXIT_SUCCESS;
 }
 
+#ifdef WRAPPER_CLI
+namespace Granite
+{
+Application *application_create(int argc, char **argv)
+{
+	application_dummy();
+	setup_filesystems();
+	return new ApplicationCLIWrapper(main_inner, argc, argv);
+}
+}
+#else
 int main(int argc, char **argv)
 {
 	Granite::Global::init();
-	int ret = main_inner(argc, argv);
+	setup_filesystems();
+	int ret = main_inner(nullptr, argc, argv);
 	Granite::Global::deinit();
 	return ret;
 }
+#endif

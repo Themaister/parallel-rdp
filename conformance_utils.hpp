@@ -23,11 +23,16 @@
 #pragma once
 
 #include <random>
-#include "util.hpp"
+#include "logging.hpp"
 #include "context.hpp"
 #include "device.hpp"
 #include "rdp_command_builder.hpp"
 #include "replayer_driver.hpp"
+#include "os_filesystem.hpp"
+#include "global_managers.hpp"
+#ifdef ANDROID
+#include "android.hpp"
+#endif
 #include <string.h>
 #define LOG_FAILURE() LOGE("Failed at %s:%d.\n", __FILE__, __LINE__)
 
@@ -128,46 +133,63 @@ struct ReplayerState
 	~ReplayerState()
 	{
 		// Ensure that debug callbacks are flushed.
-		device.wait_idle();
+		device->wait_idle();
 	}
 
 	inline bool init();
+	inline bool init(Vulkan::Device *device);
 	inline bool init(DumpPlayer &dump);
 	Vulkan::Context context;
-	Vulkan::Device device;
+	std::unique_ptr<Vulkan::Device> owned_device;
+	Vulkan::Device *device = nullptr;
 	std::unique_ptr<ReplayerDriver> reference, gpu;
 	std::unique_ptr<ReplayerDriver> combined;
 	CommandBuilder builder;
 	Interface iface;
 
-	inline bool init_common();
+	inline bool init_common(Vulkan::Device *custom_device = nullptr);
 };
 
-bool ReplayerState::init_common()
+bool ReplayerState::init_common(Vulkan::Device *custom_device)
 {
-	if (!Vulkan::Context::init_loader(nullptr))
+	if (custom_device)
 	{
-		LOGE("Failed to init Vulkan loader.\n");
-		return false;
+		device = custom_device;
 	}
+	else
+	{
+		owned_device.reset(new Vulkan::Device);
+		device = owned_device.get();
 
-	if (!context.init_instance_and_device(nullptr, 0, nullptr, 0, Vulkan::CONTEXT_CREATION_DISABLE_BINDLESS_BIT))
-	{
-		LOGE("Failed to create Vulkan context.\n");
-		return false;
+		if (!Vulkan::Context::init_loader(nullptr))
+		{
+			LOGE("Failed to init Vulkan loader.\n");
+			return false;
+		}
+
+		if (!context.init_instance_and_device(nullptr, 0, nullptr, 0, Vulkan::CONTEXT_CREATION_DISABLE_BINDLESS_BIT))
+		{
+			LOGE("Failed to create Vulkan context.\n");
+			return false;
+		}
+		device->set_context(context);
 	}
-	device.set_context(context);
 
 	return true;
 }
 
 bool ReplayerState::init()
 {
-	if (!init_common())
+	return init(nullptr);
+}
+
+bool ReplayerState::init(Vulkan::Device *device_)
+{
+	if (!init_common(device_))
 		return false;
 
 	reference = create_replayer_driver_angrylion(builder, iface);
-	gpu = create_replayer_driver_parallel(device, builder, iface);
+	gpu = create_replayer_driver_parallel(*device, builder, iface, device_ != nullptr);
 	combined = create_side_by_side_driver(reference.get(), gpu.get(), iface);
 	builder.set_command_interface(combined.get());
 	return true;
@@ -179,7 +201,7 @@ bool ReplayerState::init(DumpPlayer &dump)
 		return false;
 
 	reference = create_replayer_driver_angrylion(dump, iface);
-	gpu = create_replayer_driver_parallel(device, dump, iface);
+	gpu = create_replayer_driver_parallel(*device, dump, iface);
 	combined = create_side_by_side_driver(reference.get(), gpu.get(), iface);
 	dump.set_command_interface(combined.get());
 	return true;
@@ -304,6 +326,8 @@ static inline bool compare_image(const std::vector<Interface::RGBA> &reference,
 
 static inline void randomize_rdram(RNG &rng, ReplayerDriver &reference, ReplayerDriver &gpu)
 {
+	gpu.invalidate_caches();
+
 	auto *rdram_reference = reinterpret_cast<uint32_t *>(reference.get_rdram());
 	auto *rdram_gpu = reinterpret_cast<uint32_t *>(gpu.get_rdram());
 	size_t size = reference.get_rdram_size() >> 2;
@@ -326,12 +350,16 @@ static inline void randomize_rdram(RNG &rng, ReplayerDriver &reference, Replayer
 		rdram_reference[i] = v;
 		rdram_gpu[i] = v;
 	}
+
+	gpu.flush_caches();
 }
 
 static inline void clear_rdram(ReplayerDriver &driver)
 {
+	driver.invalidate_caches();
 	memset(driver.get_rdram(), 0, driver.get_rdram_size());
 	memset(driver.get_hidden_rdram(), 0, driver.get_hidden_rdram_size());
+	driver.flush_caches();
 }
 
 static inline bool suite_compare_glob(const std::string &suite, const std::string &cmp)
@@ -344,5 +372,42 @@ static inline bool suite_compare_glob(const std::string &suite, const std::strin
 static inline bool suite_compare(const std::string &suite, const std::string &cmp)
 {
 	return suite == cmp;
+}
+
+static inline void setup_filesystems()
+{
+	using namespace Granite;
+	using namespace Granite::Global;
+	using namespace Granite::Path;
+
+#ifdef ANDROID
+	filesystem()->register_protocol("rdp", std::make_unique<AssetManagerFilesystem>(""));
+	LOGI("Overriding Android RDP filesystem.\n");
+#else
+	auto exec_path = get_executable_path();
+	auto base_dir = basedir(exec_path);
+	auto rdp_dir = join(base_dir, "shaders");
+	auto builtin_dir = join(base_dir, "builtin");
+	auto cache_dir = join(base_dir, "cache");
+	bool use_exec_path_cache_dir = false;
+
+	FileStat s = {};
+	if (filesystem()->stat(rdp_dir, s) && s.type == PathType::Directory)
+	{
+		filesystem()->register_protocol("rdp", std::make_unique<OSFilesystem>(rdp_dir));
+		LOGI("Overriding RDP shader directory to %s.\n", rdp_dir.c_str());
+		use_exec_path_cache_dir = true;
+	}
+
+	if (filesystem()->stat(builtin_dir, s) && s.type == PathType::Directory)
+	{
+		filesystem()->register_protocol("builtin", std::make_unique<OSFilesystem>(builtin_dir));
+		LOGI("Overriding builtin shader directory to %s.\n", builtin_dir.c_str());
+		use_exec_path_cache_dir = true;
+	}
+
+	if (use_exec_path_cache_dir)
+		filesystem()->register_protocol("cache", std::make_unique<OSFilesystem>(cache_dir));
+#endif
 }
 }

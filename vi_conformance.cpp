@@ -23,6 +23,7 @@
 #include "conformance_utils.hpp"
 #include "global_managers.hpp"
 #include "cli_parser.hpp"
+#include "application_cli_wrapper.hpp"
 
 using namespace RDP;
 
@@ -79,15 +80,20 @@ static bool run_conformance_vi(ReplayerState &state, const Arguments &args, cons
 	state.combined->set_vi_register(VIRegister::Origin, 567123);
 	state.combined->set_vi_register(VIRegister::Width, 100);
 	state.combined->set_vi_register(VIRegister::VSync, variant.pal ? VI_V_SYNC_PAL : VI_V_SYNC_NTSC);
-	state.combined->set_vi_register(VIRegister::HStart,
-	                                make_vi_start_register(variant.pal ? VI_H_OFFSET_PAL : VI_H_OFFSET_NTSC,
-	                                                       (variant.pal ? VI_H_OFFSET_PAL : VI_H_OFFSET_NTSC) + 640));
 	state.combined->set_vi_register(VIRegister::VStart,
 	                                make_vi_start_register(variant.pal ? VI_V_OFFSET_PAL : VI_V_OFFSET_NTSC,
 	                                                       (variant.pal ? VI_V_OFFSET_PAL : VI_V_OFFSET_NTSC) + 224 * 2));
 	state.combined->set_vi_register(VIRegister::XScale, make_vi_scale_register(variant.x_scale, variant.x_bias));
 	state.combined->set_vi_register(VIRegister::YScale, make_vi_scale_register(variant.y_scale, variant.y_bias));
 
+	// Ensure persistent state is cleared out between tests.
+	state.combined->set_vi_register(VIRegister::HStart,
+	                                make_vi_start_register(640, 0));
+	state.combined->end_frame();
+
+	state.combined->set_vi_register(VIRegister::HStart,
+	                                make_vi_start_register(variant.pal ? VI_H_OFFSET_PAL : VI_H_OFFSET_NTSC,
+	                                                       (variant.pal ? VI_H_OFFSET_PAL : VI_H_OFFSET_NTSC) + 640));
 	RNG rng;
 	for (unsigned i = 0; i <= args.hi; i++)
 	{
@@ -118,10 +124,10 @@ static bool run_conformance_vi(ReplayerState &state, const Arguments &args, cons
 		if (i >= args.lo)
 		{
 			if (args.capture)
-				state.device.begin_renderdoc_capture();
+				state.device->begin_renderdoc_capture();
 			state.combined->end_frame();
 			if (args.capture)
-				state.device.end_renderdoc_capture();
+				state.device->end_renderdoc_capture();
 
 			if (!compare_image(state.iface.scanout_result[0], state.iface.widths[0], state.iface.heights[0],
 			                   state.iface.scanout_result[1], state.iface.widths[1], state.iface.heights[1]))
@@ -130,7 +136,7 @@ static bool run_conformance_vi(ReplayerState &state, const Arguments &args, cons
 				return false;
 			}
 
-			state.device.next_frame_context();
+			state.device->next_frame_context();
 		}
 
 		if (args.verbose)
@@ -342,10 +348,29 @@ static int main_inner(int argc, char **argv)
 	return EXIT_SUCCESS;
 }
 
+#ifdef WRAPPER_CLI
+namespace Granite
+{
+Application *application_create(int argc, char **argv)
+{
+	application_dummy();
+	setup_filesystems();
+	if (argc <= 1)
+	{
+		argc = 5;
+		static const char *tmp_argv[] = { "granite", "--range", "0", "1000", "--verbose", nullptr };
+		argv = const_cast<char **>(tmp_argv);
+	}
+	return new ApplicationCLIWrapper(main_inner, argc, argv);
+}
+}
+#else
 int main(int argc, char **argv)
 {
 	Granite::Global::init();
+	setup_filesystems();
 	int ret = main_inner(argc, argv);
 	Granite::Global::deinit();
 	return ret;
 }
+#endif

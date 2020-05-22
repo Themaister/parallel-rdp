@@ -20,13 +20,13 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+#include "application_cli_wrapper.hpp"
 #include "conformance_utils.hpp"
 #include "rdp_dump.hpp"
 #include "rdp_command_builder.hpp"
 #include "cli_parser.hpp"
 #include "context.hpp"
 #include "device.hpp"
-#include "os_filesystem.hpp"
 
 using namespace RDP;
 
@@ -107,7 +107,7 @@ struct Arguments
 	std::string suite_glob;
 	std::string suite;
 	unsigned lo = 0;
-	unsigned hi = 1024;
+	unsigned hi = 10;
 	bool verbose = false;
 	bool capture = false;
 };
@@ -523,7 +523,7 @@ static bool run_conformance_rasterization(ReplayerState &state, const Arguments 
 		if (i >= args.lo)
 		{
 			if (args.capture)
-				state.device.begin_renderdoc_capture();
+				state.device->begin_renderdoc_capture();
 
 			for (unsigned j = 0; j < variant.primitive_count; j++)
 			{
@@ -560,7 +560,7 @@ static bool run_conformance_rasterization(ReplayerState &state, const Arguments 
 
 			state.builder.end_frame();
 			if (args.capture)
-				state.device.end_renderdoc_capture();
+				state.device->end_renderdoc_capture();
 
 			if (!compare_rdram(*state.reference, *state.gpu))
 			{
@@ -568,7 +568,7 @@ static bool run_conformance_rasterization(ReplayerState &state, const Arguments 
 				return false;
 			}
 
-			state.device.next_frame_context();
+			state.device->next_frame_context();
 		}
 		else
 		{
@@ -627,7 +627,7 @@ static bool run_conformance_load_tile(ReplayerState &state, const Arguments &arg
 	else if (op == Op::LoadBlock)
 		state.builder.load_block(0, 1, 3, width, dxt ? dxt : ((1 << 10) >> (height & 3)));
 	state.combined->idle();
-	state.device.next_frame_context();
+	state.device->next_frame_context();
 
 	for (unsigned i = 0; i < 2048; i++)
 	{
@@ -1582,40 +1582,30 @@ static int main_inner(int argc, char **argv)
 	return EXIT_SUCCESS;
 }
 
+#ifdef WRAPPER_CLI
+namespace Granite
+{
+Application *application_create(int argc, char **argv)
+{
+	application_dummy();
+	setup_filesystems();
+
+	if (argc <= 1)
+	{
+		argc = 5;
+		static const char *tmp_argv[] = { "granite", "--range", "0", "100", "--verbose", nullptr };
+		argv = const_cast<char **>(tmp_argv);
+	}
+	return new ApplicationCLIWrapper(main_inner, argc, argv);
+}
+}
+#else
 int main(int argc, char **argv)
 {
 	Granite::Global::init();
-
-	using namespace Granite;
-	using namespace Granite::Global;
-	using namespace Granite::Path;
-
-	auto exec_path = get_executable_path();
-	auto base_dir = basedir(exec_path);
-	auto rdp_dir = join(base_dir, "shaders");
-	auto builtin_dir = join(base_dir, "builtin");
-	auto cache_dir = join(base_dir, "cache");
-	bool use_exec_path_cache_dir = false;
-
-	FileStat s = {};
-	if (filesystem()->stat(rdp_dir, s) && s.type == PathType::Directory)
-	{
-		filesystem()->register_protocol("rdp", std::make_unique<OSFilesystem>(rdp_dir));
-		LOGI("Overriding RDP shader directory to %s.\n", rdp_dir.c_str());
-		use_exec_path_cache_dir = true;
-	}
-
-	if (filesystem()->stat(builtin_dir, s) && s.type == PathType::Directory)
-	{
-		filesystem()->register_protocol("builtin", std::make_unique<OSFilesystem>(builtin_dir));
-		LOGI("Overriding builtin shader directory to %s.\n", builtin_dir.c_str());
-		use_exec_path_cache_dir = true;
-	}
-
-	if (use_exec_path_cache_dir)
-		filesystem()->register_protocol("cache", std::make_unique<OSFilesystem>(cache_dir));
-
+	setup_filesystems();
 	int ret = main_inner(argc, argv);
 	Granite::Global::deinit();
 	return ret;
 }
+#endif

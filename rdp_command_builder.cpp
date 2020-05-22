@@ -22,7 +22,7 @@
 
 #include "rdp_command_builder.hpp"
 #include "rdp_dump.hpp"
-#include "util.hpp"
+#include "logging.hpp"
 #include <assert.h>
 
 namespace RDP

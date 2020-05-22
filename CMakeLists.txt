@@ -1,6 +1,13 @@
 cmake_minimum_required(VERSION 3.5)
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_C_STANDARD 99)
+
+if (BUILD_ANDROID)
+	set(CMAKE_TOOLCHAIN_FILE $ENV{ANDROID_HOME}/ndk-bundle/build/cmake/android.toolchain.cmake)
+	set(ANDROID_PLATFORM android-26)
+	set(ANDROID_ABI arm64-v8a)
+endif()
+
 project(rdp-replayer LANGUAGES CXX C)
 
 if (CMAKE_COMPILER_IS_GNUCXX OR (${CMAKE_CXX_COMPILER_ID} MATCHES "Clang"))
@@ -45,7 +52,12 @@ add_granite_application(rdp-replayer rdp_replayer.cpp)
 target_link_libraries(rdp-replayer PRIVATE rdp-utils)
 target_compile_options(rdp-replayer PRIVATE ${RDP_REPLAYER_CXX_FLAGS})
 
-add_granite_offline_tool(rdp-conformance rdp_conformance.cpp conformance_utils.hpp)
+if (ANDROID)
+    add_granite_application(rdp-conformance rdp_conformance.cpp conformance_utils.hpp)
+    target_compile_definitions(rdp-conformance PRIVATE WRAPPER_CLI)
+else()
+    add_granite_offline_tool(rdp-conformance rdp_conformance.cpp conformance_utils.hpp)
+endif()
 target_link_libraries(rdp-conformance PRIVATE rdp-utils)
 target_compile_options(rdp-conformance PRIVATE ${RDP_REPLAYER_CXX_FLAGS})
 
@@ -53,11 +65,21 @@ add_granite_offline_tool(rdp-validate-dump rdp_validate_dump.cpp conformance_uti
 target_link_libraries(rdp-validate-dump PRIVATE rdp-utils)
 target_compile_options(rdp-validate-dump PRIVATE ${RDP_REPLAYER_CXX_FLAGS})
 
-add_granite_offline_tool(vi-conformance vi_conformance.cpp conformance_utils.hpp)
+if (ANDROID)
+    add_granite_application(vi-conformance vi_conformance.cpp conformance_utils.hpp)
+    target_compile_definitions(vi-conformance PRIVATE WRAPPER_CLI)
+else()
+    add_granite_offline_tool(vi-conformance vi_conformance.cpp conformance_utils.hpp)
+endif()
 target_link_libraries(vi-conformance PRIVATE rdp-utils)
 target_compile_options(vi-conformance PRIVATE ${RDP_REPLAYER_CXX_FLAGS})
 
-add_granite_offline_tool(rdp-bench rdp_bench.cpp conformance_utils.hpp)
+if (ANDROID)
+    add_granite_application(rdp-bench rdp_bench.cpp conformance_utils.hpp)
+    target_compile_definitions(rdp-bench PRIVATE WRAPPER_CLI)
+else()
+    add_granite_offline_tool(rdp-bench rdp_bench.cpp conformance_utils.hpp)
+endif()
 target_link_libraries(rdp-bench PRIVATE rdp-utils)
 target_compile_options(rdp-bench PRIVATE ${RDP_REPLAYER_CXX_FLAGS})
 

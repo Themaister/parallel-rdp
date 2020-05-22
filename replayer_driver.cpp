@@ -70,10 +70,25 @@ struct SideBySideDriver : ReplayerDriver
 	void update_rdram(const void *data, size_t size, size_t offset) override;
 	void update_hidden_rdram(const void *data, size_t size, size_t offset) override;
 
+	void invalidate_caches() override;
+	void flush_caches() override;
+
 	ReplayerDriver *first;
 	ReplayerDriver *second;
 	ReplayerEventInterface &iface;
 };
+
+void SideBySideDriver::invalidate_caches()
+{
+	first->invalidate_caches();
+	second->invalidate_caches();
+}
+
+void SideBySideDriver::flush_caches()
+{
+	first->flush_caches();
+	second->flush_caches();
+}
 
 void SideBySideDriver::set_vi_register(VIRegister index, uint32_t value)
 {

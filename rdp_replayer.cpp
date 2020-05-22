@@ -27,10 +27,11 @@
 
 #include "application.hpp"
 #include "flat_renderer.hpp"
-#include "util.hpp"
+#include "logging.hpp"
 #include "ui_manager.hpp"
 #include "rdp_command_builder.hpp"
 #include "stb_image.h"
+#include "string_helpers.hpp"
 
 using namespace RDP;
 using namespace Granite;
