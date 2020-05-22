@@ -355,6 +355,12 @@ Application *application_create(int argc, char **argv)
 {
 	application_dummy();
 	setup_filesystems();
+	if (argc <= 1)
+	{
+		argc = 5;
+		static const char *tmp_argv[] = { "granite", "--range", "0", "1000", "--verbose", nullptr };
+		argv = const_cast<char **>(tmp_argv);
+	}
 	return new ApplicationCLIWrapper(main_inner, argc, argv);
 }
 }
