@@ -64,17 +64,19 @@ static int main_inner(int, char **)
 #ifdef _WIN32
 	_putenv("PARALLEL_RDP_FORCE_SYNC_SHADER=1");
 	_putenv("PARALLEL_RDP_SINGLE_THREADED_COMMAND=1");
+	_putenv("PARALLEL_RDP_BENCH=1");
 #else
 	setenv("PARALLEL_RDP_FORCE_SYNC_SHADER", "1", 1);
 	setenv("PARALLEL_RDP_SINGLE_THREADED_COMMAND", "1", 1);
+	setenv("PARALLEL_RDP_BENCH", "1", 1);
 #endif
 
 	ReplayerState state;
 	if (!state.init())
 		return EXIT_FAILURE;
 
-	const unsigned iterations = 100;
-	const unsigned num_quads_per_frame = 100;
+	const unsigned iterations = 10000;
+	const unsigned num_quads_per_frame = 10;
 	const unsigned width = 512;
 	const unsigned height = 256;
 
@@ -111,14 +113,17 @@ static int main_inner(int, char **)
 			state.builder.draw_triangle(prim);
 		state.device.next_frame_context();
 		timestamps[iter] = Util::get_current_time_nsecs();
+
+		if ((iter & 127) == 127)
+			LOGI("...\n");
 	}
 
 	state.device.wait_idle();
 
 	uint64_t delta_ns = timestamps[iterations - 3] - timestamps[3];
 	double delta_s = 1e-9 * double(delta_ns);
-	unsigned num_frames = iterations - 6;
-	unsigned num_pixels = num_frames * num_quads_per_frame * width * height;
+	uint64_t num_frames = iterations - 6;
+	uint64_t num_pixels = num_frames * num_quads_per_frame * width * height;
 	double time_per_frame = (1e-9 * double(delta_ns)) / double(num_frames);
 
 	LOGI("Time per frame: %.3f ms.\n", 1000.0 * time_per_frame);
