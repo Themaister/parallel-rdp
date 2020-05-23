@@ -1508,7 +1508,8 @@ void Renderer::update_tmem_instances(Vulkan::CommandBuffer &cmd)
 	if (caps.timestamp)
 	{
 		end_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-		device->register_time_interval("RDP GPU", std::move(start_ts), std::move(end_ts), "tmem-update");
+		device->register_time_interval("RDP GPU", std::move(start_ts), std::move(end_ts),
+		                               "tmem-update", std::to_string(stream.tmem_upload_infos.size()));
 	}
 #endif
 }
