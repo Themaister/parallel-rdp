@@ -178,9 +178,11 @@ private:
 	bool single_threaded_processing = false;
 	bool is_supported = false;
 	bool is_host_coherent = true;
+	bool timestamp = false;
 
 	friend class Renderer;
 
 	void enqueue_coherency_operation(CoherencyOperation &&op);
+	void drain_command_ring();
 };
 }

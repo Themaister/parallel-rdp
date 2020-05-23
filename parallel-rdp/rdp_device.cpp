@@ -135,6 +135,9 @@ CommandProcessor::CommandProcessor(Vulkan::Device &device_, void *rdram_ptr,
 		if (single_threaded_processing)
 			LOGI("Will use single threaded command processing.\n");
 	}
+
+	if (const char *env = getenv("PARALLEL_RDP_BENCH"))
+		timestamp = strtol(env, nullptr, 0) > 0;
 }
 
 CommandProcessor::~CommandProcessor()
@@ -145,7 +148,7 @@ CommandProcessor::~CommandProcessor()
 void CommandProcessor::begin_frame_context()
 {
 	flush();
-	ring.drain();
+	drain_command_ring();
 	device.next_frame_context();
 }
 
@@ -954,7 +957,9 @@ void CommandProcessor::wait_for_timeline(uint64_t index)
 
 Vulkan::ImageHandle CommandProcessor::scanout(const ScanoutOptions &opts)
 {
-	ring.drain();
+	Vulkan::QueryPoolHandle start_ts, end_ts;
+	drain_command_ring();
+
 	renderer.flush();
 
 	if (!is_host_coherent)
@@ -968,9 +973,22 @@ Vulkan::ImageHandle CommandProcessor::scanout(const ScanoutOptions &opts)
 	return scanout;
 }
 
+void CommandProcessor::drain_command_ring()
+{
+	Vulkan::QueryPoolHandle start_ts, end_ts;
+	if (timestamp)
+		start_ts = device.write_calibrated_timestamp();
+	ring.drain();
+	if (timestamp)
+	{
+		end_ts = device.write_calibrated_timestamp();
+		device.register_time_interval("RDP CPU", std::move(start_ts), std::move(end_ts), "drain-command-ring");
+	}
+}
+
 void CommandProcessor::scanout_sync(std::vector<RGBA> &colors, unsigned &width, unsigned &height)
 {
-	ring.drain();
+	drain_command_ring();
 	renderer.flush();
 
 	if (!is_host_coherent)
