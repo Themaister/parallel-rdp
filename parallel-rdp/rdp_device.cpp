@@ -122,7 +122,7 @@ CommandProcessor::CommandProcessor(Vulkan::Device &device_, void *rdram_ptr,
 #endif
 			this, 4 * 1024);
 
-	if (const char *env = getenv("PARALLEL_RDP_MEASURE_SYNC_TIME"))
+	if (const char *env = getenv("PARALLEL_RDP_BENCH"))
 	{
 		measure_stall_time = strtol(env, nullptr, 0) > 0;
 		if (measure_stall_time)
@@ -939,17 +939,16 @@ uint64_t CommandProcessor::signal_timeline()
 
 void CommandProcessor::wait_for_timeline(uint64_t index)
 {
-	std::chrono::time_point<std::chrono::high_resolution_clock> start_ts, end_ts;
+	Vulkan::QueryPoolHandle start_ts, end_ts;
 	if (measure_stall_time)
-		start_ts = std::chrono::high_resolution_clock::now();
+		start_ts = device.write_calibrated_timestamp();
 	timeline_worker.wait([this, index]() -> bool {
 		return thread_timeline_value >= index;
 	});
 	if (measure_stall_time)
 	{
-		end_ts = std::chrono::high_resolution_clock::now();
-		double ms = std::chrono::duration_cast<std::chrono::nanoseconds>(end_ts - start_ts).count() * 1e-6;
-		LOGI("parallel-RDP sync: Stalled for %.3f ms.\n", ms);
+		end_ts = device.write_calibrated_timestamp();
+		device.register_time_interval("RDP CPU", std::move(start_ts), std::move(end_ts), "wait-for-timeline");
 	}
 }
 

@@ -32,6 +32,8 @@
 #include "shaders/slangmosh.hpp"
 #endif
 
+#define FINE_GRAINED_TIMESTAMP
+
 namespace RDP
 {
 Renderer::Renderer(CommandProcessor &processor_)
@@ -1439,7 +1441,6 @@ void Renderer::RenderBuffersUpdater::upload(Vulkan::Device &device, const Render
 	if (!gpu.triangle_setup.is_host)
 		cmd = device.request_command_buffer(Vulkan::CommandBuffer::Type::AsyncCompute);
 
-//#define UPLOAD_TRANSFER_TIMESTAMPS
 #ifdef UPLOAD_TRANSFER_TIMESTAMPS
 	Vulkan::QueryPoolHandle start_ts, end_ts;
 	if (cmd)
@@ -1507,7 +1508,7 @@ void Renderer::update_tmem_instances(Vulkan::CommandBuffer &cmd)
 	if (caps.timestamp)
 	{
 		end_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-		device->register_time_interval(std::move(start_ts), std::move(end_ts), "tmem-update");
+		device->register_time_interval("RDP GPU", std::move(start_ts), std::move(end_ts), "tmem-update");
 	}
 #endif
 }
@@ -1541,7 +1542,7 @@ void Renderer::submit_span_setup_jobs(Vulkan::CommandBuffer &cmd)
 	if (caps.timestamp)
 	{
 		end_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-		device->register_time_interval(std::move(begin_ts), std::move(end_ts), "span-info-jobs");
+		device->register_time_interval("RDP GPU", std::move(begin_ts), std::move(end_ts), "span-info-jobs");
 	}
 #endif
 	cmd.end_region();
@@ -1631,7 +1632,7 @@ void Renderer::submit_tile_binning_prepass(Vulkan::CommandBuffer &cmd)
 	if (caps.timestamp)
 	{
 		end_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-		device->register_time_interval(std::move(begin_ts), std::move(end_ts), "tile-binning-prepass");
+		device->register_time_interval("RDP GPU", std::move(begin_ts), std::move(end_ts), "tile-binning-prepass");
 	}
 #endif
 
@@ -1762,7 +1763,7 @@ void Renderer::submit_rasterization(Vulkan::CommandBuffer &cmd, Vulkan::Buffer &
 	if (caps.timestamp)
 	{
 		end_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-		device->register_time_interval(std::move(start_ts), std::move(end_ts), "shading");
+		device->register_time_interval("RDP GPU", std::move(start_ts), std::move(end_ts), "shading");
 	}
 #endif
 	cmd.end_region();
@@ -1863,7 +1864,7 @@ void Renderer::submit_tile_binning_complete(Vulkan::CommandBuffer &cmd)
 	if (caps.timestamp)
 	{
 		end_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-		device->register_time_interval(std::move(start_ts), std::move(end_ts), "tile-binning");
+		device->register_time_interval("RDP GPU", std::move(start_ts), std::move(end_ts), "tile-binning");
 	}
 #endif
 
@@ -2048,7 +2049,7 @@ void Renderer::submit_render_pass()
 		if (caps.timestamp)
 		{
 			end_ts = cmd->write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-			device->register_time_interval(std::move(start_ts), std::move(end_ts), "depth-blending");
+			device->register_time_interval("RDP GPU", std::move(start_ts), std::move(end_ts), "depth-blending");
 		}
 #endif
 
@@ -2068,7 +2069,10 @@ void Renderer::submit_render_pass()
 	if (caps.timestamp)
 	{
 		render_pass_end = cmd->write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-		device->register_time_interval(std::move(render_pass_start), std::move(render_pass_end), "render-pass");
+		std::string tag;
+		tag = "(" + std::to_string(fb.width) + " x " + std::to_string(fb.deduced_height) + ")";
+		tag += " (" + std::to_string(stream.triangle_setup.size()) + " triangles)";
+		device->register_time_interval("RDP GPU", std::move(render_pass_start), std::move(render_pass_end), "render-pass", std::move(tag));
 	}
 
 	Vulkan::Fence fence;
@@ -2316,6 +2320,10 @@ void Renderer::resolve_coherency_host_to_gpu()
 	// "win" over writes made by CPU, since CPU is not allowed to meaningfully overwrite data which the GPU
 	// is going to touch.
 
+	Vulkan::QueryPoolHandle start_ts, end_ts;
+	if (caps.timestamp)
+		start_ts = device->write_calibrated_timestamp();
+
 	std::atomic_thread_fence(std::memory_order_acquire);
 
 	Util::SmallVector<VkBufferCopy, 1024> buffer_copies;
@@ -2495,6 +2503,12 @@ void Renderer::resolve_coherency_host_to_gpu()
 		             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
 		device->submit(cmd);
 	}
+
+	if (caps.timestamp)
+	{
+		end_ts = device->write_calibrated_timestamp();
+		device->register_time_interval("RDP CPU", std::move(start_ts), std::move(end_ts), "coherency-host-to-gpu");
+	}
 }
 
 void Renderer::flush_queues()
@@ -2518,7 +2532,15 @@ void Renderer::flush_queues()
 	auto &sync = internal_sync[buffer_instance];
 	if (sync.complete.fence)
 	{
+		Vulkan::QueryPoolHandle start_ts, end_ts;
+		if (caps.timestamp)
+			start_ts = device->write_calibrated_timestamp();
 		sync.complete.fence->wait();
+		if (caps.timestamp)
+		{
+			end_ts = device->write_calibrated_timestamp();
+			device->register_time_interval("RDP CPU", std::move(start_ts), std::move(end_ts), "render-pass-fence");
+		}
 		sync.complete.fence.reset();
 	}
 
@@ -3050,7 +3072,11 @@ bool Renderer::supports_subgroup_size_control(uint32_t minimum_size, uint32_t ma
 
 void Renderer::PipelineExecutor::perform_work(const Vulkan::DeferredPipelineCompile &compile) const
 {
+	auto start_ts = device->write_calibrated_timestamp();
 	Vulkan::CommandBuffer::build_compute_pipeline(device, compile);
+	auto end_ts = device->write_calibrated_timestamp();
+	device->register_time_interval("RDP Pipeline", std::move(start_ts), std::move(end_ts),
+	                               "pipeline-compilation", std::to_string(compile.hash));
 }
 
 bool Renderer::PipelineExecutor::is_sentinel(const Vulkan::DeferredPipelineCompile &compile) const
