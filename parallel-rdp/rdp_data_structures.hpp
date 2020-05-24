@@ -376,10 +376,6 @@ constexpr unsigned DefaultWorkgroupSize = 64;
 
 constexpr unsigned TileWidth = 8;
 constexpr unsigned TileHeight = 8;
-constexpr unsigned TileLowresDownsampleLog2 = 2;
-constexpr unsigned TileLowresDownsample = 1u << TileLowresDownsampleLog2;
-constexpr unsigned TileWidthLowres = TileWidth * TileLowresDownsample;
-constexpr unsigned TileHeightLowres = TileHeight * TileLowresDownsample;
 constexpr unsigned MaxTilesX = Limits::MaxWidth / TileWidth;
 constexpr unsigned MaxTilesY = Limits::MaxHeight / TileHeight;
 constexpr unsigned IncoherentPageSize = 1024;

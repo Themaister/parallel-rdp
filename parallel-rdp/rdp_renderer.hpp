@@ -185,7 +185,6 @@ private:
 	Vulkan::BufferHandle blender_divider_lut_buffer;
 	Vulkan::BufferViewHandle blender_divider_buffer;
 
-	Vulkan::BufferHandle tile_binning_buffer_prepass;
 	Vulkan::BufferHandle tile_binning_buffer;
 	Vulkan::BufferHandle tile_binning_buffer_coarse;
 
@@ -281,8 +280,7 @@ private:
 	void update_tmem_instances(Vulkan::CommandBuffer &cmd);
 	void submit_span_setup_jobs(Vulkan::CommandBuffer &cmd);
 	void update_deduced_height(const TriangleSetup &setup);
-	void submit_tile_binning_prepass(Vulkan::CommandBuffer &cmd);
-	void submit_tile_binning_complete(Vulkan::CommandBuffer &cmd);
+	void submit_tile_binning_combined(Vulkan::CommandBuffer &cmd);
 	void clear_indirect_buffer(Vulkan::CommandBuffer &cmd);
 	void submit_rasterization(Vulkan::CommandBuffer &cmd, Vulkan::Buffer &tmem);
 
@@ -315,7 +313,6 @@ private:
 		bool force_sync = false;
 		bool ubershader = false;
 		bool supports_small_integer_arithmetic = false;
-		bool subgroup_tile_binning_prepass = false;
 		bool subgroup_tile_binning = false;
 	} caps;
 

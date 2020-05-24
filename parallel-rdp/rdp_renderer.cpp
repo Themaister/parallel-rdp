@@ -196,15 +196,6 @@ bool Renderer::init_caps()
 	}
 
 	uint32_t subgroup_size = features.subgroup_properties.subgroupSize;
-	const VkSubgroupFeatureFlags required_prepass =
-			VK_SUBGROUP_FEATURE_BALLOT_BIT |
-			VK_SUBGROUP_FEATURE_BASIC_BIT;
-
-	caps.subgroup_tile_binning_prepass =
-			allow_subgroup &&
-			(features.subgroup_properties.supportedOperations & required_prepass) == required_prepass &&
-			(features.subgroup_properties.supportedStages & VK_SHADER_STAGE_COMPUTE_BIT) != 0 &&
-			can_support_minimum_subgroup_size(32) && subgroup_size <= 64;
 
 	const VkSubgroupFeatureFlags required =
 			VK_SUBGROUP_FEATURE_BALLOT_BIT |
@@ -231,9 +222,7 @@ int Renderer::resolve_shader_define(const char *name, const char *define) const
 		return int(caps.supports_small_integer_arithmetic);
 	else if (strcmp(define, "SUBGROUP") == 0)
 	{
-		if (strcmp(name, "tile_binning_prepass") == 0)
-			return int(caps.subgroup_tile_binning_prepass);
-		else if (strcmp(name, "tile_binning") == 0)
+		if (strcmp(name, "tile_binning_combined") == 0)
 			return int(caps.subgroup_tile_binning);
 		else
 			return 0;
@@ -251,8 +240,6 @@ void Renderer::init_buffers()
 
 	static_assert((Limits::MaxPrimitives % 32) == 0, "MaxPrimitives must be divisble by 32.");
 	static_assert(Limits::MaxPrimitives <= (32 * 32), "MaxPrimitives must be less-or-equal than 1024.");
-	static_assert((Limits::MaxWidth % ImplementationConstants::TileWidthLowres) == 0, "MaxWidth must be divisible by maximum tile width.");
-	static_assert((Limits::MaxHeight % ImplementationConstants::TileHeightLowres) == 0, "MaxHeight must be divisible by maximum tile height.");
 
 	info.size = sizeof(uint32_t) *
 	            (Limits::MaxPrimitives / 32) *
@@ -267,22 +254,22 @@ void Renderer::init_buffers()
 	tile_binning_buffer_coarse = device->create_buffer(info);
 	device->set_name(*tile_binning_buffer_coarse, "tile-binning-buffer-coarse");
 
-	info.size = sizeof(uint32_t) *
-	            (Limits::MaxPrimitives / 32) *
-	            (Limits::MaxWidth / ImplementationConstants::TileWidthLowres) *
-	            (Limits::MaxHeight / ImplementationConstants::TileHeightLowres);
-	tile_binning_buffer_prepass = device->create_buffer(info);
-	device->set_name(*tile_binning_buffer_prepass, "tile-binning-buffer-prepass");
-
 	if (!caps.ubershader)
 	{
 		Vulkan::BufferCreateInfo indirect_info = {};
 		indirect_info.size = 4 * sizeof(uint32_t) * Limits::MaxStaticRasterizationStates;
 		indirect_info.domain = Vulkan::BufferDomain::Device;
 		indirect_info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
-		indirect_info.misc = Vulkan::BUFFER_MISC_ZERO_INITIALIZE_BIT;
 		indirect_dispatch_buffer = device->create_buffer(indirect_info);
 		device->set_name(*indirect_dispatch_buffer, "indirect-dispatch-buffer");
+
+		{
+			auto cmd = device->request_command_buffer(Vulkan::CommandBuffer::Type::AsyncCompute);
+			clear_indirect_buffer(*cmd);
+			cmd->barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
+			             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT);
+			device->submit(cmd);
+		}
 
 		info.size = sizeof(uint32_t) *
 		            (Limits::MaxPrimitives / 32) *
@@ -1528,98 +1515,6 @@ void Renderer::submit_span_setup_jobs(Vulkan::CommandBuffer &cmd)
 	cmd.end_region();
 }
 
-void Renderer::submit_tile_binning_prepass(Vulkan::CommandBuffer &cmd)
-{
-	cmd.begin_region("tile-binning-prepass");
-	auto &instance = buffer_instances[buffer_instance];
-	cmd.set_storage_buffer(0, 0, *tile_binning_buffer_prepass);
-	cmd.set_storage_buffer(0, 1, *instance.gpu.triangle_setup.buffer);
-	cmd.set_storage_buffer(0, 2, *instance.gpu.scissor_setup.buffer);
-
-	cmd.set_specialization_constant_mask(0x3f);
-	cmd.set_specialization_constant(1, ImplementationConstants::TileWidth);
-	cmd.set_specialization_constant(2, ImplementationConstants::TileHeight);
-	cmd.set_specialization_constant(3, ImplementationConstants::TileLowresDownsample);
-	cmd.set_specialization_constant(4, Limits::MaxPrimitives);
-	cmd.set_specialization_constant(5, Limits::MaxWidth);
-
-	struct PushData
-	{
-		uint32_t width, height;
-		uint32_t num_primitives;
-	} push = {};
-	push.width = fb.width;
-	push.height = fb.deduced_height;
-	push.num_primitives = uint32_t(stream.triangle_setup.size());
-
-	cmd.push_constants(&push, 0, sizeof(push));
-
-	auto &features = device->get_device_features();
-	uint32_t subgroup_size = features.subgroup_properties.subgroupSize;
-
-#ifdef FINE_GRAINED_TIMESTAMP
-	Vulkan::QueryPoolHandle begin_ts, end_ts;
-	if (caps.timestamp)
-		begin_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-#endif
-
-	if (caps.subgroup_tile_binning_prepass)
-	{
-#ifdef PARALLEL_RDP_SHADER_DIR
-		cmd.set_program("rdp://tile_binning_prepass.comp", {
-			{ "DEBUG_ENABLE", debug_channel ? 1 : 0 },
-			{ "SUBGROUP", 1 },
-			{ "SMALL_TYPES", caps.supports_small_integer_arithmetic ? 1 : 0 },
-		});
-#else
-		cmd.set_program(shader_bank->tile_binning_prepass);
-#endif
-
-		cmd.set_specialization_constant(0, subgroup_size);
-		if (supports_subgroup_size_control(32, subgroup_size))
-		{
-			cmd.enable_subgroup_size_control(true);
-			cmd.set_subgroup_size_log2(true, 5, trailing_zeroes(subgroup_size));
-		}
-
-		cmd.dispatch((push.num_primitives + subgroup_size - 1) / subgroup_size,
-		             (push.width + ImplementationConstants::TileWidthLowres - 1) /
-		             ImplementationConstants::TileWidthLowres,
-		             (push.height + ImplementationConstants::TileHeightLowres - 1) /
-		             ImplementationConstants::TileHeightLowres);
-	}
-	else
-	{
-#ifdef PARALLEL_RDP_SHADER_DIR
-		cmd.set_program("rdp://tile_binning_prepass.comp", {
-			{ "DEBUG_ENABLE", debug_channel ? 1 : 0 },
-			{ "SUBGROUP", 0 },
-			{ "SMALL_TYPES", caps.supports_small_integer_arithmetic ? 1 : 0 },
-		});
-#else
-		cmd.set_program(shader_bank->tile_binning_prepass);
-#endif
-
-		cmd.set_specialization_constant(0, 32);
-		cmd.dispatch((push.num_primitives + 31) / 32,
-		             (push.width + ImplementationConstants::TileWidthLowres - 1) /
-		             ImplementationConstants::TileWidthLowres,
-		             (push.height + ImplementationConstants::TileHeightLowres - 1) /
-		             ImplementationConstants::TileHeightLowres);
-	}
-
-#ifdef FINE_GRAINED_TIMESTAMP
-	if (caps.timestamp)
-	{
-		end_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-		device->register_time_interval("RDP GPU", std::move(begin_ts), std::move(end_ts), "tile-binning-prepass");
-	}
-#endif
-
-	cmd.enable_subgroup_size_control(false);
-	cmd.end_region();
-}
-
 void Renderer::clear_indirect_buffer(Vulkan::CommandBuffer &cmd)
 {
 	cmd.begin_region("clear-indirect-buffer");
@@ -1749,31 +1644,29 @@ void Renderer::submit_rasterization(Vulkan::CommandBuffer &cmd, Vulkan::Buffer &
 	cmd.end_region();
 }
 
-void Renderer::submit_tile_binning_complete(Vulkan::CommandBuffer &cmd)
+void Renderer::submit_tile_binning_combined(Vulkan::CommandBuffer &cmd)
 {
-	cmd.begin_region("tile-binning-complete");
+	cmd.begin_region("tile-binning-combined");
 	auto &instance = buffer_instances[buffer_instance];
 	cmd.set_storage_buffer(0, 0, *instance.gpu.triangle_setup.buffer);
 	cmd.set_storage_buffer(0, 1, *instance.gpu.scissor_setup.buffer);
 	cmd.set_storage_buffer(0, 2, *instance.gpu.state_indices.buffer);
 	cmd.set_storage_buffer(0, 3, *tile_binning_buffer);
-	cmd.set_storage_buffer(0, 4, *tile_binning_buffer_prepass);
-	cmd.set_storage_buffer(0, 5, *tile_binning_buffer_coarse);
+	cmd.set_storage_buffer(0, 4, *tile_binning_buffer_coarse);
 
 	if (!caps.ubershader)
 	{
-		cmd.set_storage_buffer(0, 6, *per_tile_offsets);
-		cmd.set_storage_buffer(0, 7, *indirect_dispatch_buffer);
-		cmd.set_storage_buffer(0, 8, *tile_work_list);
+		cmd.set_storage_buffer(0, 5, *per_tile_offsets);
+		cmd.set_storage_buffer(0, 6, *indirect_dispatch_buffer);
+		cmd.set_storage_buffer(0, 7, *tile_work_list);
 	}
 
-	cmd.set_specialization_constant_mask(0x7f);
+	cmd.set_specialization_constant_mask(0x3f);
 	cmd.set_specialization_constant(1, ImplementationConstants::TileWidth);
 	cmd.set_specialization_constant(2, ImplementationConstants::TileHeight);
-	cmd.set_specialization_constant(3, ImplementationConstants::TileLowresDownsampleLog2);
-	cmd.set_specialization_constant(4, Limits::MaxPrimitives);
-	cmd.set_specialization_constant(5, Limits::MaxWidth);
-	cmd.set_specialization_constant(6, Limits::MaxTileInstances);
+	cmd.set_specialization_constant(3, Limits::MaxPrimitives);
+	cmd.set_specialization_constant(4, Limits::MaxWidth);
+	cmd.set_specialization_constant(5, Limits::MaxTileInstances);
 
 	struct PushData
 	{
@@ -1800,45 +1693,46 @@ void Renderer::submit_tile_binning_complete(Vulkan::CommandBuffer &cmd)
 	if (caps.subgroup_tile_binning)
 	{
 #ifdef PARALLEL_RDP_SHADER_DIR
-		cmd.set_program("rdp://tile_binning.comp", {
-			{ "DEBUG_ENABLE", debug_channel ? 1 : 0 },
-			{ "SUBGROUP", 1 },
-			{ "UBERSHADER", int(caps.ubershader) },
-			{ "SMALL_TYPES", caps.supports_small_integer_arithmetic ? 1 : 0 },
+		cmd.set_program("rdp://tile_binning_combined.comp", {
+				{ "DEBUG_ENABLE", debug_channel ? 1 : 0 },
+				{ "SUBGROUP", 1 },
+				{ "UBERSHADER", int(caps.ubershader) },
+				{ "SMALL_TYPES", caps.supports_small_integer_arithmetic ? 1 : 0 },
 		});
 #else
-		cmd.set_program(shader_bank->tile_binning);
+		cmd.set_program(shader_bank->tile_binning_combined);
 #endif
 
-		cmd.set_specialization_constant(0, subgroup_size);
 		if (supports_subgroup_size_control(32, subgroup_size))
 		{
 			cmd.enable_subgroup_size_control(true);
 			cmd.set_subgroup_size_log2(true, 5, trailing_zeroes(subgroup_size));
 		}
-
-		cmd.dispatch((push.num_primitives_32 + subgroup_size - 1) / subgroup_size,
-		             (push.width + ImplementationConstants::TileWidth - 1) / ImplementationConstants::TileWidth,
-		             (push.height + ImplementationConstants::TileHeight - 1) / ImplementationConstants::TileHeight);
 	}
 	else
 	{
 #ifdef PARALLEL_RDP_SHADER_DIR
-		cmd.set_program("rdp://tile_binning.comp", {
-			{ "DEBUG_ENABLE", debug_channel ? 1 : 0 },
-			{ "SUBGROUP", 0 },
-			{ "UBERSHADER", int(caps.ubershader) },
-			{ "SMALL_TYPES", caps.supports_small_integer_arithmetic ? 1 : 0 },
+		cmd.set_program("rdp://tile_binning_combined.comp", {
+				{ "DEBUG_ENABLE", debug_channel ? 1 : 0 },
+				{ "SUBGROUP", 0 },
+				{ "UBERSHADER", int(caps.ubershader) },
+				{ "SMALL_TYPES", caps.supports_small_integer_arithmetic ? 1 : 0 },
 		});
 #else
-		cmd.set_program(shader_bank->tile_binning);
+		cmd.set_program(shader_bank->tile_binning_combined);
 #endif
 
-		cmd.set_specialization_constant(0, 32);
-		cmd.dispatch((push.num_primitives_32 + 31) / 32,
-		             (push.width + ImplementationConstants::TileWidth - 1) / ImplementationConstants::TileWidth,
-		             (push.height + ImplementationConstants::TileHeight - 1) / ImplementationConstants::TileHeight);
+		subgroup_size = 32;
 	}
+
+	cmd.set_specialization_constant(0, subgroup_size);
+	unsigned meta_tiles_x = 8;
+	unsigned meta_tiles_y = subgroup_size / meta_tiles_x;
+	unsigned num_tiles_x = (push.width + ImplementationConstants::TileWidth - 1) / ImplementationConstants::TileWidth;
+	unsigned num_tiles_y = (push.height + ImplementationConstants::TileHeight - 1) / ImplementationConstants::TileHeight;
+	unsigned num_meta_tiles_x = (num_tiles_x + meta_tiles_x - 1) / meta_tiles_x;
+	unsigned num_meta_tiles_y = (num_tiles_y + meta_tiles_y - 1) / meta_tiles_y;
+	cmd.dispatch(num_meta_tiles_x, num_meta_tiles_y, 1);
 
 #ifdef FINE_GRAINED_TIMESTAMP
 	if (caps.timestamp)
@@ -1872,38 +1766,22 @@ void Renderer::submit_render_pass(Vulkan::CommandBuffer &cmd)
 	if (need_render_pass)
 	{
 		submit_span_setup_jobs(cmd);
-		submit_tile_binning_prepass(cmd);
-		if (!caps.ubershader)
-			clear_indirect_buffer(cmd);
+		submit_tile_binning_combined(cmd);
 	}
 
 	if (need_tmem_upload)
 		update_tmem_instances(cmd);
 
 	cmd.barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
-	            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-	            VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+	            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | (caps.ubershader ? VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT : 0),
+	            VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT |
+	            (caps.ubershader ? VK_ACCESS_INDIRECT_COMMAND_READ_BIT : 0));
 
-	if (need_render_pass)
+	if (need_render_pass && !caps.ubershader)
 	{
-		submit_tile_binning_complete(cmd);
-
-		if (caps.ubershader)
-		{
-			cmd.barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
-			            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
-		}
-		else
-		{
-			cmd.barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
-			            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT,
-			            VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_INDIRECT_COMMAND_READ_BIT);
-
-			submit_rasterization(cmd, need_tmem_upload ? *tmem_instances : *tmem);
-
-			cmd.barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
-			            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
-		}
+		submit_rasterization(cmd, need_tmem_upload ? *tmem_instances : *tmem);
+		cmd.barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
+		            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
 	}
 
 	if (need_render_pass)
@@ -2042,6 +1920,9 @@ void Renderer::submit_render_pass(Vulkan::CommandBuffer &cmd)
 		tag += " (" + std::to_string(stream.triangle_setup.size()) + " triangles)";
 		device->register_time_interval("RDP GPU", std::move(render_pass_start), std::move(render_pass_end), "render-pass", std::move(tag));
 	}
+
+	if (!caps.ubershader)
+		clear_indirect_buffer(cmd);
 
 	stream.cmd->barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
 	                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
