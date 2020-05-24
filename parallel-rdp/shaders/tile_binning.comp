@@ -43,12 +43,11 @@ layout(local_size_x = 32) in;
 layout(constant_id = 1) const int TILE_WIDTH = 8;
 layout(constant_id = 2) const int TILE_HEIGHT = 8;
 layout(constant_id = 3) const int TILE_DOWNSAMPLE_LOG2 = 2;
-layout(constant_id = 4) const int MAX_PRIMITIVES = 0x1000;
+layout(constant_id = 4) const int MAX_PRIMITIVES = 256;
 layout(constant_id = 5) const int MAX_WIDTH = 1024;
 layout(constant_id = 6) const int TILE_INSTANCE_STRIDE = 0x10000;
 
 const int TILE_BINNING_STRIDE = MAX_PRIMITIVES / 32;
-const int TILE_BINNING_STRIDE_COARSE = TILE_BINNING_STRIDE / 32;
 const int MAX_TILES_X = MAX_WIDTH / TILE_WIDTH;
 const int MAX_TILES_X_LOW_RES = MAX_WIDTH / (TILE_WIDTH << TILE_DOWNSAMPLE_LOG2);
 
@@ -224,12 +223,12 @@ void main()
 
     if (subgroupElect())
     {
-        uint binned_bitmask_offset = uint(TILE_BINNING_STRIDE_COARSE * linear_tile);
+        uint binned_bitmask_offset = uint(linear_tile);
         // gl_SubgroupSize of 128 is a theoretical thing, but no GPU does that ...
         if (gl_SubgroupSize == 64u)
         {
             binned_bitmask_coarse[binned_bitmask_offset + 2u * gl_WorkGroupID.x] = ballot_result.x;
-            binned_bitmask_coarse[binned_bitmask_offset + 2u * gl_WorkGroupID.x + 1u] = ballot_result.y;
+            //binned_bitmask_coarse[binned_bitmask_offset + 2u * gl_WorkGroupID.x + 1u] = ballot_result.y;
         }
         else if (gl_SubgroupSize == 32u)
         {
@@ -248,7 +247,7 @@ void main()
 
     if (local_index == 0u)
     {
-        uint binned_bitmask_offset = uint(TILE_BINNING_STRIDE_COARSE * linear_tile);
+        uint binned_bitmask_offset = uint(linear_tile);
         binned_bitmask_coarse[binned_bitmask_offset + gl_WorkGroupID.x] = merged_mask;
     }
 

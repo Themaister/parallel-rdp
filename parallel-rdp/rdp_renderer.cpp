@@ -249,7 +249,8 @@ void Renderer::init_buffers()
 	info.domain = Vulkan::BufferDomain::Device;
 	info.misc = Vulkan::BUFFER_MISC_ZERO_INITIALIZE_BIT;
 
-	static_assert((Limits::MaxPrimitives % (32 * 32)) == 0, "MaxPrimitives must be divisble by 1024.");
+	static_assert((Limits::MaxPrimitives % 32) == 0, "MaxPrimitives must be divisble by 32.");
+	static_assert(Limits::MaxPrimitives <= (32 * 32), "MaxPrimitives must be less-or-equal than 1024.");
 	static_assert((Limits::MaxWidth % ImplementationConstants::TileWidthLowres) == 0, "MaxWidth must be divisible by maximum tile width.");
 	static_assert((Limits::MaxHeight % ImplementationConstants::TileHeightLowres) == 0, "MaxHeight must be divisible by maximum tile height.");
 
@@ -261,7 +262,6 @@ void Renderer::init_buffers()
 	device->set_name(*tile_binning_buffer, "tile-binning-buffer");
 
 	info.size = sizeof(uint32_t) *
-	            (Limits::MaxPrimitives / 1024) *
 	            (Limits::MaxWidth / ImplementationConstants::TileWidth) *
 	            (Limits::MaxHeight / ImplementationConstants::TileHeight);
 	tile_binning_buffer_coarse = device->create_buffer(info);
@@ -500,7 +500,7 @@ Renderer::MappedBuffer Renderer::RenderBuffers::create_buffer(
 	Vulkan::BufferCreateInfo info = {};
 	info.domain = domain;
 
-	if (domain == Vulkan::BufferDomain::Device)
+	if (domain == Vulkan::BufferDomain::Device || domain == Vulkan::BufferDomain::LinkedDeviceHostPreferDevice)
 	{
 		info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
 		             VK_BUFFER_USAGE_TRANSFER_DST_BIT |
@@ -1988,7 +1988,6 @@ void Renderer::submit_render_pass(Vulkan::CommandBuffer &cmd)
 		global_fb_info->base_primitive_index = base_primitive_index;
 
 		push.depth_addr_index = fb.depth_addr >> 1;
-		push.num_primitives_1024 = (uint32_t(stream.triangle_setup.size()) + 1023) / 1024;
 		cmd.push_constants(&push, 0, sizeof(push));
 
 		if (caps.ubershader)

@@ -229,7 +229,6 @@ struct GlobalState
 	uint32_t addr_index;
 	uint32_t depth_addr_index;
 	uint32_t fb_width, fb_height;
-	uint32_t num_primitives_1024;
 };
 
 struct TileRasterWork
@@ -358,17 +357,17 @@ private:
 
 namespace Limits
 {
-constexpr unsigned MaxPrimitives = 0x1000;
+constexpr unsigned MaxPrimitives = 256;
 constexpr unsigned MaxStaticRasterizationStates = 64;
-constexpr unsigned MaxDepthBlendStates = 256;
+constexpr unsigned MaxDepthBlendStates = 64;
 constexpr unsigned MaxTileInfoStates = 256;
 constexpr unsigned NumSyncStates = 32;
 constexpr unsigned MaxNumTiles = 8;
 constexpr unsigned MaxTMEMInstances = 256;
-constexpr unsigned MaxSpanSetups = 512 * 1024;
+constexpr unsigned MaxSpanSetups = 32 * 1024;
 constexpr unsigned MaxWidth = 1024;
 constexpr unsigned MaxHeight = 1024;
-constexpr unsigned MaxTileInstances = 0x40000;
+constexpr unsigned MaxTileInstances = 0x8000;
 }
 
 namespace ImplementationConstants
@@ -384,5 +383,8 @@ constexpr unsigned TileHeightLowres = TileHeight * TileLowresDownsample;
 constexpr unsigned MaxTilesX = Limits::MaxWidth / TileWidth;
 constexpr unsigned MaxTilesY = Limits::MaxHeight / TileHeight;
 constexpr unsigned IncoherentPageSize = 1024;
+constexpr unsigned MaxPendingRenderPassesBeforeFlush = 8;
+constexpr unsigned MinimumPrimitivesForIdleFlush = 32;
+constexpr unsigned MinimumRenderPassesForIdleFlush = 2;
 }
 }
