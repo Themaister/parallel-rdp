@@ -77,10 +77,6 @@ const int MAX_TILES_X = MAX_WIDTH / int(gl_WorkGroupSize.x);
 
 void main()
 {
-    init_tile(gl_GlobalInvocationID.xy,
-              registers.fb_width, registers.fb_height,
-              registers.fb_addr_index, registers.fb_depth_addr_index);
-
     int x = int(gl_GlobalInvocationID.x);
     int y = int(gl_GlobalInvocationID.y);
     ivec2 tile = ivec2(gl_WorkGroupID.xy);
@@ -89,6 +85,13 @@ void main()
     int linear_tile_base = linear_tile * TILE_BINNING_STRIDE;
 
     uint coarse_binned = tile_binning_coarse.elems[linear_tile];
+    if (coarse_binned == 0u)
+        return;
+
+    init_tile(gl_GlobalInvocationID.xy,
+              registers.fb_width, registers.fb_height,
+              registers.fb_addr_index, registers.fb_depth_addr_index);
+
     while (coarse_binned != 0u)
     {
         int mask_index = findLSB(coarse_binned);
