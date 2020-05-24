@@ -1931,8 +1931,11 @@ void Renderer::submit_render_pass(Vulkan::CommandBuffer &cmd)
 
 void Renderer::maintain_queues()
 {
-	if (pending_render_passes >= ImplementationConstants::MaxPendingRenderPassesBeforeFlush)
+	if (pending_render_passes >= ImplementationConstants::MaxPendingRenderPassesBeforeFlush ||
+	    pending_primitives >= Limits::MaxPrimitives)
+	{
 		submit_to_queue();
+	}
 }
 
 void Renderer::maintain_queues_idle()
