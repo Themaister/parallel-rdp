@@ -309,7 +309,7 @@ private:
 
 	struct Caps
 	{
-		bool timestamp = false;
+		int timestamp = 0;
 		bool force_sync = false;
 		bool ubershader = false;
 		bool supports_small_integer_arithmetic = false;
