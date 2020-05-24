@@ -254,21 +254,6 @@ void Renderer::init_buffers()
 
 	if (!caps.ubershader)
 	{
-		Vulkan::BufferCreateInfo indirect_info = {};
-		indirect_info.size = 4 * sizeof(uint32_t) * Limits::MaxStaticRasterizationStates;
-		indirect_info.domain = Vulkan::BufferDomain::Device;
-		indirect_info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
-		indirect_dispatch_buffer = device->create_buffer(indirect_info);
-		device->set_name(*indirect_dispatch_buffer, "indirect-dispatch-buffer");
-
-		{
-			auto cmd = device->request_command_buffer(Vulkan::CommandBuffer::Type::AsyncCompute);
-			clear_indirect_buffer(*cmd);
-			cmd->barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
-			             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT);
-			device->submit(cmd);
-		}
-
 		info.size = sizeof(uint32_t) *
 		            (Limits::MaxPrimitives / 32) *
 		            (Limits::MaxWidth / ImplementationConstants::TileWidth) *
@@ -1328,6 +1313,7 @@ void Renderer::draw_shaded_primitive(const TriangleSetup &setup, const Attribute
 	fb.color_write_pending = true;
 	if (stream.depth_blend_state.flags & DEPTH_BLEND_DEPTH_UPDATE_BIT)
 		fb.depth_write_pending = true;
+	pending_primitives++;
 
 	if (need_flush())
 		flush_queues();
@@ -1858,7 +1844,7 @@ void Renderer::submit_render_pass(Vulkan::CommandBuffer &cmd)
 				{ "SMALL_TYPES", caps.supports_small_integer_arithmetic ? 1 : 0 },
 			});
 #else
-			cmd->set_program(shader_bank->ubershader);
+			cmd.set_program(shader_bank->ubershader);
 #endif
 		}
 		else
@@ -1869,7 +1855,7 @@ void Renderer::submit_render_pass(Vulkan::CommandBuffer &cmd)
 				{ "SMALL_TYPES", caps.supports_small_integer_arithmetic ? 1 : 0 },
 			});
 #else
-			cmd->set_program(shader_bank->depth_blend);
+			cmd.set_program(shader_bank->depth_blend);
 #endif
 		}
 
@@ -2423,6 +2409,7 @@ void Renderer::flush_queues()
 	}
 
 	ensure_command_buffer();
+
 	if (!is_host_coherent)
 		resolve_coherency_host_to_gpu(*stream.cmd);
 	instance.upload(*device, stream, *stream.cmd);
@@ -2437,6 +2424,20 @@ void Renderer::ensure_command_buffer()
 {
 	if (!stream.cmd)
 		stream.cmd = device->request_command_buffer(Vulkan::CommandBuffer::Type::AsyncCompute);
+
+	if (!caps.ubershader && !indirect_dispatch_buffer)
+	{
+		Vulkan::BufferCreateInfo indirect_info = {};
+		indirect_info.size = 4 * sizeof(uint32_t) * Limits::MaxStaticRasterizationStates;
+		indirect_info.domain = Vulkan::BufferDomain::Device;
+		indirect_info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
+		indirect_dispatch_buffer = device->create_buffer(indirect_info);
+		device->set_name(*indirect_dispatch_buffer, "indirect-dispatch-buffer");
+
+		clear_indirect_buffer(*stream.cmd);
+		stream.cmd->barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
+		                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT);
+	}
 }
 
 void Renderer::set_tile(uint32_t tile, const TileMeta &meta)
