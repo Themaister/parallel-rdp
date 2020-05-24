@@ -525,7 +525,7 @@ Renderer::MappedBuffer Renderer::RenderBuffers::create_buffer(
 
 void Renderer::RenderBuffersUpdater::init(Vulkan::Device &device)
 {
-	gpu.init(device, Vulkan::BufferDomain::Device, nullptr);
+	gpu.init(device, Vulkan::BufferDomain::LinkedDeviceHostPreferDevice, nullptr);
 	cpu.init(device, Vulkan::BufferDomain::Host, &gpu);
 }
 
