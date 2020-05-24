@@ -65,6 +65,7 @@ layout(push_constant, std430) uniform Registers
     uint fb_depth_addr_index;
     uint fb_width;
     uint fb_height;
+    uint group_mask;
 } registers;
 
 layout(constant_id = 5) const int MAX_PRIMITIVES = 256;
@@ -84,7 +85,7 @@ void main()
     int linear_tile = tile.x + tile.y * MAX_TILES_X;
     int linear_tile_base = linear_tile * TILE_BINNING_STRIDE;
 
-    uint coarse_binned = tile_binning_coarse.elems[linear_tile];
+    uint coarse_binned = tile_binning_coarse.elems[linear_tile] & registers.group_mask;
     if (coarse_binned == 0u)
         return;
 

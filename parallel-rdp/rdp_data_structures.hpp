@@ -229,6 +229,7 @@ struct GlobalState
 	uint32_t addr_index;
 	uint32_t depth_addr_index;
 	uint32_t fb_width, fb_height;
+	uint32_t group_mask;
 };
 
 struct TileRasterWork

@@ -1644,12 +1644,11 @@ void Renderer::submit_tile_binning_combined(Vulkan::CommandBuffer &cmd)
 	{
 		uint32_t width, height;
 		uint32_t num_primitives;
-		uint32_t num_primitives_32;
 	} push = {};
 	push.width = fb.width;
 	push.height = fb.deduced_height;
 	push.num_primitives = uint32_t(stream.triangle_setup.size());
-	push.num_primitives_32 = (push.num_primitives + 31) / 32;
+	unsigned num_primitives_32 = (push.num_primitives + 31) / 32;
 
 	cmd.push_constants(&push, 0, sizeof(push));
 
@@ -1702,7 +1701,7 @@ void Renderer::submit_tile_binning_combined(Vulkan::CommandBuffer &cmd)
 	unsigned num_tiles_y = (push.height + ImplementationConstants::TileHeight - 1) / ImplementationConstants::TileHeight;
 	unsigned num_meta_tiles_x = (num_tiles_x + meta_tiles_x - 1) / meta_tiles_x;
 	unsigned num_meta_tiles_y = (num_tiles_y + meta_tiles_y - 1) / meta_tiles_y;
-	cmd.dispatch(num_meta_tiles_x, num_meta_tiles_y, 1);
+	cmd.dispatch(num_primitives_32, num_meta_tiles_x, num_meta_tiles_y);
 
 	if (caps.timestamp >= 2)
 	{
@@ -1834,6 +1833,8 @@ void Renderer::submit_render_pass(Vulkan::CommandBuffer &cmd)
 		global_fb_info->base_primitive_index = base_primitive_index;
 
 		push.depth_addr_index = fb.depth_addr >> 1;
+		unsigned num_primitives_32 = (stream.triangle_setup.size() + 31) / 32;
+		push.group_mask = (1u << num_primitives_32) - 1;
 		cmd.push_constants(&push, 0, sizeof(push));
 
 		if (caps.ubershader)
