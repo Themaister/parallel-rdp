@@ -601,16 +601,14 @@ void Renderer::set_tmem(Vulkan::Buffer *buffer)
 void Renderer::flush()
 {
 	flush_queues();
+	submit_to_queue();
 	device->flush_frame();
 }
 
 Vulkan::Fence Renderer::flush_and_signal()
 {
 	flush_queues();
-
-	Vulkan::Fence fence;
-	device->submit_empty(Vulkan::CommandBuffer::Type::AsyncCompute, &fence);
-	return fence;
+	return submit_to_queue();
 }
 
 void Renderer::set_color_framebuffer(uint32_t addr, uint32_t width, FBFormat fmt)
@@ -1423,56 +1421,44 @@ bool Renderer::need_flush() const
 }
 
 template <typename Cache>
-void Renderer::RenderBuffersUpdater::upload(Vulkan::CommandBuffer *cmd, Vulkan::Device &device,
-                                            const MappedBuffer &gpu, const MappedBuffer &cpu, const Cache &cache)
+void Renderer::RenderBuffersUpdater::upload(Vulkan::CommandBuffer &cmd, Vulkan::Device &device,
+                                            const MappedBuffer &gpu, const MappedBuffer &cpu, const Cache &cache,
+                                            bool &did_upload)
 {
 	if (!cache.empty())
 	{
 		memcpy(device.map_host_buffer(*cpu.buffer, Vulkan::MEMORY_ACCESS_WRITE_BIT), cache.data(), cache.byte_size());
 		device.unmap_host_buffer(*cpu.buffer, Vulkan::MEMORY_ACCESS_WRITE_BIT);
-		if (cmd)
-			cmd->copy_buffer(*gpu.buffer, 0, *cpu.buffer, 0, cache.byte_size());
+		if (gpu.buffer != cpu.buffer)
+		{
+			cmd.copy_buffer(*gpu.buffer, 0, *cpu.buffer, 0, cache.byte_size());
+			did_upload = true;
+		}
 	}
 }
 
-void Renderer::RenderBuffersUpdater::upload(Vulkan::Device &device, const Renderer::StreamCaches &caches)
+void Renderer::RenderBuffersUpdater::upload(Vulkan::Device &device, const Renderer::StreamCaches &caches,
+                                            Vulkan::CommandBuffer &cmd)
 {
-	Vulkan::CommandBufferHandle cmd;
-	if (!gpu.triangle_setup.is_host)
-		cmd = device.request_command_buffer(Vulkan::CommandBuffer::Type::AsyncCompute);
+	bool did_upload = false;
 
-#ifdef UPLOAD_TRANSFER_TIMESTAMPS
-	Vulkan::QueryPoolHandle start_ts, end_ts;
-	if (cmd)
-		start_ts = cmd->write_timestamp(VK_PIPELINE_STAGE_TRANSFER_BIT);
-#endif
+	upload(cmd, device, gpu.triangle_setup, cpu.triangle_setup, caches.triangle_setup, did_upload);
+	upload(cmd, device, gpu.attribute_setup, cpu.attribute_setup, caches.attribute_setup, did_upload);
+	upload(cmd, device, gpu.derived_setup, cpu.derived_setup, caches.derived_setup, did_upload);
+	upload(cmd, device, gpu.scissor_setup, cpu.scissor_setup, caches.scissor_setup, did_upload);
 
-	upload(cmd.get(), device, gpu.triangle_setup, cpu.triangle_setup, caches.triangle_setup);
-	upload(cmd.get(), device, gpu.attribute_setup, cpu.attribute_setup, caches.attribute_setup);
-	upload(cmd.get(), device, gpu.derived_setup, cpu.derived_setup, caches.derived_setup);
-	upload(cmd.get(), device, gpu.scissor_setup, cpu.scissor_setup, caches.scissor_setup);
+	upload(cmd, device, gpu.static_raster_state, cpu.static_raster_state, caches.static_raster_state_cache, did_upload);
+	upload(cmd, device, gpu.depth_blend_state, cpu.depth_blend_state, caches.depth_blend_state_cache, did_upload);
+	upload(cmd, device, gpu.tile_info_state, cpu.tile_info_state, caches.tile_info_state_cache, did_upload);
 
-	upload(cmd.get(), device, gpu.static_raster_state, cpu.static_raster_state, caches.static_raster_state_cache);
-	upload(cmd.get(), device, gpu.depth_blend_state, cpu.depth_blend_state, caches.depth_blend_state_cache);
-	upload(cmd.get(), device, gpu.tile_info_state, cpu.tile_info_state, caches.tile_info_state_cache);
+	upload(cmd, device, gpu.state_indices, cpu.state_indices, caches.state_indices, did_upload);
+	upload(cmd, device, gpu.span_info_offsets, cpu.span_info_offsets, caches.span_info_offsets, did_upload);
+	upload(cmd, device, gpu.span_info_jobs, cpu.span_info_jobs, caches.span_info_jobs, did_upload);
 
-	upload(cmd.get(), device, gpu.state_indices, cpu.state_indices, caches.state_indices);
-	upload(cmd.get(), device, gpu.span_info_offsets, cpu.span_info_offsets, caches.span_info_offsets);
-	upload(cmd.get(), device, gpu.span_info_jobs, cpu.span_info_jobs, caches.span_info_jobs);
-
-#ifdef UPLOAD_TRANSFER_TIMESTAMPS
-	if (cmd)
+	if (did_upload)
 	{
-		end_ts = cmd->write_timestamp(VK_PIPELINE_STAGE_TRANSFER_BIT);
-		device.register_time_interval(std::move(start_ts), std::move(end_ts), "render-pass-upload");
-	}
-#endif
-
-	if (cmd)
-	{
-		cmd->barrier(VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
-		             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
-		device.submit(cmd);
+		cmd.barrier(VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+		            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
 	}
 }
 
@@ -1873,7 +1859,7 @@ void Renderer::submit_tile_binning_complete(Vulkan::CommandBuffer &cmd)
 	cmd.end_region();
 }
 
-void Renderer::submit_render_pass()
+void Renderer::submit_render_pass(Vulkan::CommandBuffer &cmd)
 {
 	bool need_render_pass = fb.width != 0 && fb.deduced_height != 0 && !stream.triangle_setup.empty();
 	bool need_tmem_upload = !stream.tmem_upload_infos.empty();
@@ -1881,98 +1867,95 @@ void Renderer::submit_render_pass()
 	if (!need_submit)
 		return;
 
-	auto cmd = device->request_command_buffer(Vulkan::CommandBuffer::Type::AsyncCompute);
-
 	Vulkan::QueryPoolHandle render_pass_start, render_pass_end;
 	if (caps.timestamp)
-		render_pass_start = cmd->write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+		render_pass_start = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 
 	if (debug_channel)
-		cmd->begin_debug_channel(this, "Debug", 16 * 1024 * 1024);
+		cmd.begin_debug_channel(this, "Debug", 16 * 1024 * 1024);
 
 	// Here we run 3 dispatches in parallel. Span setup and TMEM instances are low occupancy kind of jobs, but the binning
 	// pass should dominate here unless the workload is trivial.
 	if (need_render_pass)
 	{
-		submit_span_setup_jobs(*cmd);
-		submit_tile_binning_prepass(*cmd);
+		submit_span_setup_jobs(cmd);
+		submit_tile_binning_prepass(cmd);
 		if (!caps.ubershader)
-			clear_indirect_buffer(*cmd);
+			clear_indirect_buffer(cmd);
 	}
 
 	if (need_tmem_upload)
-		update_tmem_instances(*cmd);
+		update_tmem_instances(cmd);
 
-	cmd->barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
-	             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-	             VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+	cmd.barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
+	            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+	            VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
 
 	if (need_render_pass)
 	{
-		submit_tile_binning_complete(*cmd);
+		submit_tile_binning_complete(cmd);
 
 		if (caps.ubershader)
 		{
-			cmd->barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
-			             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
+			cmd.barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
+			            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
 		}
 		else
 		{
-			cmd->barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
-			             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT,
-			             VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_INDIRECT_COMMAND_READ_BIT);
+			cmd.barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
+			            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT,
+			            VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_INDIRECT_COMMAND_READ_BIT);
 
-			submit_rasterization(*cmd, need_tmem_upload ? *tmem_instances : *tmem);
+			submit_rasterization(cmd, need_tmem_upload ? *tmem_instances : *tmem);
 
-			cmd->barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
-			             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
+			cmd.barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
+			            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
 		}
 	}
 
-	auto &sync = internal_sync[buffer_instance];
 	if (need_render_pass)
 	{
-		cmd->begin_region("render-pass");
+		cmd.begin_region("render-pass");
 		auto &instance = buffer_instances[buffer_instance];
 
-		cmd->set_specialization_constant_mask(0xff);
-		cmd->set_specialization_constant(0, uint32_t(rdram_size));
-		cmd->set_specialization_constant(1, uint32_t(fb.fmt));
-		cmd->set_specialization_constant(2, int(fb.addr == fb.depth_addr));
-		cmd->set_specialization_constant(3, ImplementationConstants::TileWidth);
-		cmd->set_specialization_constant(4, ImplementationConstants::TileHeight);
-		cmd->set_specialization_constant(5, Limits::MaxPrimitives);
-		cmd->set_specialization_constant(6, Limits::MaxWidth);
-		cmd->set_specialization_constant(7, uint32_t(!is_host_coherent));
+		cmd.set_specialization_constant_mask(0xff);
+		cmd.set_specialization_constant(0, uint32_t(rdram_size));
+		cmd.set_specialization_constant(1, uint32_t(fb.fmt));
+		cmd.set_specialization_constant(2, int(fb.addr == fb.depth_addr));
+		cmd.set_specialization_constant(3, ImplementationConstants::TileWidth);
+		cmd.set_specialization_constant(4, ImplementationConstants::TileHeight);
+		cmd.set_specialization_constant(5, Limits::MaxPrimitives);
+		cmd.set_specialization_constant(6, Limits::MaxWidth);
+		cmd.set_specialization_constant(7, uint32_t(!is_host_coherent));
 
-		cmd->set_storage_buffer(0, 0, *rdram, rdram_offset, rdram_size * (is_host_coherent ? 1 : 2));
-		cmd->set_storage_buffer(0, 1, *hidden_rdram);
-		cmd->set_storage_buffer(0, 2, need_tmem_upload ? *tmem_instances : *tmem);
+		cmd.set_storage_buffer(0, 0, *rdram, rdram_offset, rdram_size * (is_host_coherent ? 1 : 2));
+		cmd.set_storage_buffer(0, 1, *hidden_rdram);
+		cmd.set_storage_buffer(0, 2, need_tmem_upload ? *tmem_instances : *tmem);
 
 		if (!caps.ubershader)
 		{
-			cmd->set_storage_buffer(0, 3, *per_tile_shaded_color);
-			cmd->set_storage_buffer(0, 4, *per_tile_shaded_depth);
-			cmd->set_storage_buffer(0, 5, *per_tile_shaded_shaded_alpha);
-			cmd->set_storage_buffer(0, 6, *per_tile_shaded_coverage);
-			cmd->set_storage_buffer(0, 7, *per_tile_offsets);
+			cmd.set_storage_buffer(0, 3, *per_tile_shaded_color);
+			cmd.set_storage_buffer(0, 4, *per_tile_shaded_depth);
+			cmd.set_storage_buffer(0, 5, *per_tile_shaded_shaded_alpha);
+			cmd.set_storage_buffer(0, 6, *per_tile_shaded_coverage);
+			cmd.set_storage_buffer(0, 7, *per_tile_offsets);
 		}
 
-		cmd->set_storage_buffer(1, 0, *instance.gpu.triangle_setup.buffer);
-		cmd->set_storage_buffer(1, 1, *instance.gpu.attribute_setup.buffer);
-		cmd->set_storage_buffer(1, 2, *instance.gpu.derived_setup.buffer);
-		cmd->set_storage_buffer(1, 3, *instance.gpu.scissor_setup.buffer);
-		cmd->set_storage_buffer(1, 4, *instance.gpu.static_raster_state.buffer);
-		cmd->set_storage_buffer(1, 5, *instance.gpu.depth_blend_state.buffer);
-		cmd->set_storage_buffer(1, 6, *instance.gpu.state_indices.buffer);
-		cmd->set_storage_buffer(1, 7, *instance.gpu.tile_info_state.buffer);
-		cmd->set_storage_buffer(1, 8, *span_setups);
-		cmd->set_storage_buffer(1, 9, *instance.gpu.span_info_offsets.buffer);
-		cmd->set_buffer_view(1, 10, *blender_divider_buffer);
-		cmd->set_storage_buffer(1, 11, *tile_binning_buffer);
-		cmd->set_storage_buffer(1, 12, *tile_binning_buffer_coarse);
+		cmd.set_storage_buffer(1, 0, *instance.gpu.triangle_setup.buffer);
+		cmd.set_storage_buffer(1, 1, *instance.gpu.attribute_setup.buffer);
+		cmd.set_storage_buffer(1, 2, *instance.gpu.derived_setup.buffer);
+		cmd.set_storage_buffer(1, 3, *instance.gpu.scissor_setup.buffer);
+		cmd.set_storage_buffer(1, 4, *instance.gpu.static_raster_state.buffer);
+		cmd.set_storage_buffer(1, 5, *instance.gpu.depth_blend_state.buffer);
+		cmd.set_storage_buffer(1, 6, *instance.gpu.state_indices.buffer);
+		cmd.set_storage_buffer(1, 7, *instance.gpu.tile_info_state.buffer);
+		cmd.set_storage_buffer(1, 8, *span_setups);
+		cmd.set_storage_buffer(1, 9, *instance.gpu.span_info_offsets.buffer);
+		cmd.set_buffer_view(1, 10, *blender_divider_buffer);
+		cmd.set_storage_buffer(1, 11, *tile_binning_buffer);
+		cmd.set_storage_buffer(1, 12, *tile_binning_buffer_coarse);
 
-		auto *global_fb_info = cmd->allocate_typed_constant_data<GlobalFBInfo>(2, 0, 1);
+		auto *global_fb_info = cmd.allocate_typed_constant_data<GlobalFBInfo>(2, 0, 1);
 
 		GlobalState push = {};
 		push.fb_width = fb.width;
@@ -2013,12 +1996,12 @@ void Renderer::submit_render_pass()
 
 		push.depth_addr_index = fb.depth_addr >> 1;
 		push.num_primitives_1024 = (uint32_t(stream.triangle_setup.size()) + 1023) / 1024;
-		cmd->push_constants(&push, 0, sizeof(push));
+		cmd.push_constants(&push, 0, sizeof(push));
 
 		if (caps.ubershader)
 		{
 #ifdef PARALLEL_RDP_SHADER_DIR
-			cmd->set_program("rdp://ubershader.comp", {
+			cmd.set_program("rdp://ubershader.comp", {
 				{ "DEBUG_ENABLE", debug_channel ? 1 : 0 },
 				{ "SMALL_TYPES", caps.supports_small_integer_arithmetic ? 1 : 0 },
 			});
@@ -2029,7 +2012,7 @@ void Renderer::submit_render_pass()
 		else
 		{
 #ifdef PARALLEL_RDP_SHADER_DIR
-			cmd->set_program("rdp://depth_blend.comp", {
+			cmd.set_program("rdp://depth_blend.comp", {
 				{ "DEBUG_ENABLE", debug_channel ? 1 : 0 },
 				{ "SMALL_TYPES", caps.supports_small_integer_arithmetic ? 1 : 0 },
 			});
@@ -2041,62 +2024,77 @@ void Renderer::submit_render_pass()
 #ifdef FINE_GRAINED_TIMESTAMP
 		Vulkan::QueryPoolHandle start_ts, end_ts;
 		if (caps.timestamp)
-			start_ts = cmd->write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+			start_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 #endif
 
-		cmd->dispatch((push.fb_width + 7) / 8, (push.fb_height + 7) / 8, 1);
+		cmd.dispatch((push.fb_width + 7) / 8, (push.fb_height + 7) / 8, 1);
 
 #ifdef FINE_GRAINED_TIMESTAMP
 		if (caps.timestamp)
 		{
-			end_ts = cmd->write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+			end_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 			device->register_time_interval("RDP GPU", std::move(start_ts), std::move(end_ts), "depth-blending");
 		}
 #endif
 
-		cmd->end_region();
+		cmd.end_region();
 
 		base_primitive_index += uint32_t(stream.triangle_setup.size());
 	}
 
-	bool need_host_barrier = is_host_coherent || !incoherent.staging_readback;
-
-	cmd->barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
-	             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
-	             (need_host_barrier ? VK_PIPELINE_STAGE_HOST_BIT : VK_PIPELINE_STAGE_TRANSFER_BIT),
-	             VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT |
-	             (need_host_barrier ? VK_ACCESS_HOST_READ_BIT : VK_ACCESS_TRANSFER_READ_BIT));
-
 	if (caps.timestamp)
 	{
-		render_pass_end = cmd->write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+		render_pass_end = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 		std::string tag;
 		tag = "(" + std::to_string(fb.width) + " x " + std::to_string(fb.deduced_height) + ")";
 		tag += " (" + std::to_string(stream.triangle_setup.size()) + " triangles)";
 		device->register_time_interval("RDP GPU", std::move(render_pass_start), std::move(render_pass_end), "render-pass", std::move(tag));
 	}
 
+	stream.cmd->barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
+	                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+	                    VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT);
+}
+
+Vulkan::Fence Renderer::submit_to_queue()
+{
+	if (!stream.cmd)
+	{
+		Vulkan::Fence fence;
+		device->submit_empty(Vulkan::CommandBuffer::Type::AsyncCompute, &fence);
+		return fence;
+	}
+
+	bool need_host_barrier = is_host_coherent || !incoherent.staging_readback;
+
+	// Memory from compute is already made available, make it visible now to host or transfer depending what we do next.
+	stream.cmd->barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0,
+	                    (need_host_barrier ? VK_PIPELINE_STAGE_HOST_BIT : VK_PIPELINE_STAGE_TRANSFER_BIT),
+	                    (need_host_barrier ? VK_ACCESS_HOST_READ_BIT : VK_ACCESS_TRANSFER_READ_BIT));
+
 	Vulkan::Fence fence;
 
 	if (is_host_coherent)
 	{
-		device->submit(cmd, &fence);
-		sync.complete.fence = std::move(fence);
+		device->submit(stream.cmd, &fence);
 	}
 	else
 	{
 		CoherencyOperation op;
-		if (need_render_pass)
-			resolve_coherency_gpu_to_host(op, *cmd);
-		device->submit(cmd, &fence);
-		if (need_render_pass)
-		{
-			op.fence = fence;
-			if (!op.copies.empty())
-				processor.enqueue_coherency_operation(std::move(op));
-		}
-		sync.complete.fence = std::move(fence);
+		resolve_coherency_gpu_to_host(op, *stream.cmd);
+		device->submit(stream.cmd, &fence);
+		op.fence = fence;
+		if (!op.copies.empty())
+			processor.enqueue_coherency_operation(std::move(op));
 	}
+
+	Util::for_each_bit(sync_indices_needs_flush, [&](unsigned bit) {
+		auto &sync = internal_sync[bit];
+		sync.fence = fence;
+	});
+	sync_indices_needs_flush = 0;
+	stream.cmd.reset();
+	return fence;
 }
 
 void Renderer::begin_new_context()
@@ -2162,7 +2160,8 @@ void Renderer::mark_pages_for_gpu_read(uint32_t base_addr, uint32_t byte_count)
 	uint32_t page = start_page;
 	while (page != end_page)
 	{
-		bool pending_writes = incoherent.pending_writes_for_page[page].load(std::memory_order_relaxed) != 0;
+		bool pending_writes = (incoherent.page_to_pending_readback[page / 32] & (1u << (page & 31))) != 0 &&
+		                      incoherent.pending_writes_for_page[page].load(std::memory_order_relaxed) != 0;
 
 		// We'll do an acquire memory barrier later before we start memcpy-ing from host memory.
 		if (pending_writes)
@@ -2311,10 +2310,13 @@ void Renderer::resolve_coherency_gpu_to_host(CoherencyOperation &op, Vulkan::Com
 void Renderer::resolve_coherency_external(unsigned offset, unsigned length)
 {
 	mark_pages_for_gpu_read(offset, length);
-	resolve_coherency_host_to_gpu();
+	ensure_command_buffer();
+	resolve_coherency_host_to_gpu(*stream.cmd);
+	device->submit(stream.cmd);
+	stream.cmd.reset();
 }
 
-void Renderer::resolve_coherency_host_to_gpu()
+void Renderer::resolve_coherency_host_to_gpu(Vulkan::CommandBuffer &cmd)
 {
 	// Now, ensure that the GPU sees a coherent view of the CPU memory writes up until now.
 	// Writes made by the GPU which are not known to be resolved on the timeline waiter thread will always
@@ -2525,30 +2527,40 @@ void Renderer::flush_queues()
 		// We're going to write to these pages, so lock them down.
 		lock_pages_for_gpu_write(fb.addr, get_byte_size_for_bound_color_framebuffer());
 		lock_pages_for_gpu_write(fb.depth_addr, get_byte_size_for_bound_depth_framebuffer());
-
-		resolve_coherency_host_to_gpu();
 	}
 
 	auto &instance = buffer_instances[buffer_instance];
 	auto &sync = internal_sync[buffer_instance];
-	if (sync.complete.fence)
+	if (sync_indices_needs_flush & (1u << buffer_instance))
+		submit_to_queue();
+	sync_indices_needs_flush |= 1u << buffer_instance;
+
+	if (sync.fence)
 	{
 		Vulkan::QueryPoolHandle start_ts, end_ts;
 		if (caps.timestamp)
 			start_ts = device->write_calibrated_timestamp();
-		sync.complete.fence->wait();
+		sync.fence->wait();
 		if (caps.timestamp)
 		{
 			end_ts = device->write_calibrated_timestamp();
 			device->register_time_interval("RDP CPU", std::move(start_ts), std::move(end_ts), "render-pass-fence");
 		}
-		sync.complete.fence.reset();
+		sync.fence.reset();
 	}
 
-	instance.upload(*device, stream);
-
-	submit_render_pass();
+	ensure_command_buffer();
+	if (!is_host_coherent)
+		resolve_coherency_host_to_gpu(*stream.cmd);
+	instance.upload(*device, stream, *stream.cmd);
+	submit_render_pass(*stream.cmd);
 	begin_new_context();
+}
+
+void Renderer::ensure_command_buffer()
+{
+	if (!stream.cmd)
+		stream.cmd = device->request_command_buffer(Vulkan::CommandBuffer::Type::AsyncCompute);
 }
 
 void Renderer::set_tile(uint32_t tile, const TileMeta &meta)

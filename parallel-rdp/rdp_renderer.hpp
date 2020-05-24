@@ -172,7 +172,10 @@ private:
 
 		std::vector<UploadInfo> tmem_upload_infos;
 		unsigned max_shaded_tiles = 0;
+		Vulkan::CommandBufferHandle cmd;
 	} stream;
+
+	void ensure_command_buffer();
 
 	TileInfo tiles[Limits::MaxNumTiles];
 	Vulkan::BufferHandle tmem_instances;
@@ -222,18 +225,18 @@ private:
 	struct RenderBuffersUpdater
 	{
 		void init(Vulkan::Device &device);
-		void upload(Vulkan::Device &device, const StreamCaches &caches);
+		void upload(Vulkan::Device &device, const StreamCaches &caches, Vulkan::CommandBuffer &cmd);
 
 		template <typename Cache>
-		void upload(Vulkan::CommandBuffer *cmd, Vulkan::Device &device,
-		            const MappedBuffer &gpu, const MappedBuffer &cpu, const Cache &cache);
+		void upload(Vulkan::CommandBuffer &cmd, Vulkan::Device &device,
+		            const MappedBuffer &gpu, const MappedBuffer &cpu, const Cache &cache, bool &did_upload);
 
 		RenderBuffers cpu, gpu;
 	};
 
 	struct InternalSynchronization
 	{
-		SyncObject complete;
+		Vulkan::Fence fence;
 	};
 
 	struct Constants
@@ -258,13 +261,15 @@ private:
 
 	RenderBuffersUpdater buffer_instances[Limits::NumSyncStates];
 	InternalSynchronization internal_sync[Limits::NumSyncStates];
+	uint32_t sync_indices_needs_flush = 0;
 	unsigned buffer_instance = 0;
 	uint32_t base_primitive_index = 0;
 
 	bool tmem_upload_needs_flush(uint32_t addr) const;
 
 	void flush_queues();
-	void submit_render_pass();
+	void submit_render_pass(Vulkan::CommandBuffer &cmd);
+	Vulkan::Fence submit_to_queue();
 	void begin_new_context();
 	bool need_flush() const;
 	void update_tmem_instances(Vulkan::CommandBuffer &cmd);
@@ -318,7 +323,7 @@ private:
 
 	std::unique_ptr<WorkerThread<Vulkan::DeferredPipelineCompile, PipelineExecutor>> pipeline_worker;
 
-	void resolve_coherency_host_to_gpu();
+	void resolve_coherency_host_to_gpu(Vulkan::CommandBuffer &cmd);
 	void resolve_coherency_gpu_to_host(CoherencyOperation &op, Vulkan::CommandBuffer &cmd);
 	uint32_t get_byte_size_for_bound_color_framebuffer() const;
 	uint32_t get_byte_size_for_bound_depth_framebuffer() const;
