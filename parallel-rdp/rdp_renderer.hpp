@@ -104,7 +104,9 @@ public:
 	void set_convert(uint16_t k0, uint16_t k1, uint16_t k2, uint16_t k3, uint16_t k4, uint16_t k5);
 	void set_color_key(unsigned component, uint32_t width, uint32_t center, uint32_t scale);
 
-	void flush();
+	// Called when the command thread has not seen any activity in a given period of time.
+	// This is useful so we don't needlessly queue up work when we might as well kick it to the GPU.
+	void notify_idle_command_thread();
 	Vulkan::Fence flush_and_signal();
 
 	int resolve_shader_define(const char *name, const char *define) const;
@@ -264,6 +266,8 @@ private:
 	uint32_t sync_indices_needs_flush = 0;
 	unsigned buffer_instance = 0;
 	uint32_t base_primitive_index = 0;
+	unsigned pending_render_passes = 0;
+	unsigned pending_primitives = 0;
 
 	bool tmem_upload_needs_flush(uint32_t addr) const;
 
@@ -272,6 +276,8 @@ private:
 	Vulkan::Fence submit_to_queue();
 	void begin_new_context();
 	bool need_flush() const;
+	void maintain_queues();
+	void maintain_queues_idle();
 	void update_tmem_instances(Vulkan::CommandBuffer &cmd);
 	void submit_span_setup_jobs(Vulkan::CommandBuffer &cmd);
 	void update_deduced_height(const TriangleSetup &setup);

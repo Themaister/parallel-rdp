@@ -598,13 +598,6 @@ void Renderer::set_tmem(Vulkan::Buffer *buffer)
 	device->set_name(*tmem, "tmem");
 }
 
-void Renderer::flush()
-{
-	flush_queues();
-	submit_to_queue();
-	device->flush_frame();
-}
-
 Vulkan::Fence Renderer::flush_and_signal()
 {
 	flush_queues();
@@ -2056,8 +2049,27 @@ void Renderer::submit_render_pass(Vulkan::CommandBuffer &cmd)
 	                    VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT);
 }
 
+void Renderer::maintain_queues()
+{
+	if (pending_render_passes >= ImplementationConstants::MaxPendingRenderPassesBeforeFlush)
+		submit_to_queue();
+}
+
+void Renderer::maintain_queues_idle()
+{
+	if (pending_primitives >= ImplementationConstants::MinimumPrimitivesForIdleFlush ||
+	    pending_render_passes >= ImplementationConstants::MinimumRenderPassesForIdleFlush)
+	{
+		flush_queues();
+		submit_to_queue();
+	}
+}
+
 Vulkan::Fence Renderer::submit_to_queue()
 {
+	pending_render_passes = 0;
+	pending_primitives = 0;
+
 	if (!stream.cmd)
 	{
 		Vulkan::Fence fence;
@@ -2554,7 +2566,10 @@ void Renderer::flush_queues()
 		resolve_coherency_host_to_gpu(*stream.cmd);
 	instance.upload(*device, stream, *stream.cmd);
 	submit_render_pass(*stream.cmd);
+	pending_render_passes++;
 	begin_new_context();
+
+	maintain_queues();
 }
 
 void Renderer::ensure_command_buffer()
@@ -2574,6 +2589,11 @@ void Renderer::set_tile_size(uint32_t tile, uint32_t slo, uint32_t shi, uint32_t
 	tiles[tile].size.shi = shi;
 	tiles[tile].size.tlo = tlo;
 	tiles[tile].size.thi = thi;
+}
+
+void Renderer::notify_idle_command_thread()
+{
+	maintain_queues_idle();
 }
 
 bool Renderer::tmem_upload_needs_flush(uint32_t addr) const

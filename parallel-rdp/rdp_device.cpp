@@ -216,7 +216,7 @@ void CommandProcessor::clear_buffer(Vulkan::Buffer &buffer, uint32_t value)
 
 void CommandProcessor::op_sync_full(const uint32_t *)
 {
-	renderer.flush();
+	renderer.flush_and_signal();
 }
 
 static void decode_triangle_setup(TriangleSetup &setup, const uint32_t *words, bool copy_cycle)
@@ -855,7 +855,13 @@ void CommandProcessor::enqueue_command_direct(unsigned num_words, const uint32_t
 
 	case Op::MetaFlush:
 	{
-		renderer.flush();
+		renderer.flush_and_signal();
+		break;
+	}
+
+	case Op::MetaIdle:
+	{
+		renderer.notify_idle_command_thread();
 		break;
 	}
 
@@ -959,8 +965,7 @@ Vulkan::ImageHandle CommandProcessor::scanout(const ScanoutOptions &opts)
 {
 	Vulkan::QueryPoolHandle start_ts, end_ts;
 	drain_command_ring();
-
-	renderer.flush();
+	renderer.flush_and_signal();
 
 	if (!is_host_coherent)
 	{
@@ -989,7 +994,7 @@ void CommandProcessor::drain_command_ring()
 void CommandProcessor::scanout_sync(std::vector<RGBA> &colors, unsigned &width, unsigned &height)
 {
 	drain_command_ring();
-	renderer.flush();
+	renderer.flush_and_signal();
 
 	if (!is_host_coherent)
 	{
