@@ -106,27 +106,16 @@ uint allocate_work_offset(uint variant_index)
 #if !SUBGROUP
     return atomicAdd(indirect_counts.elems[variant_index].x, 1u);
 #else
-    // Merge atomic operations.
-    // XXX: This is kinda sketchy, and almost all shader compilers fail on a slightly different implementation of this loop.
-    bool work_to_do = true;
-    uint res;
-    do
-    {
-        if (subgroupBroadcastFirst(variant_index) == variant_index)
-        {
-            uvec4 active_mask = subgroupBallot(true);
-            uint count = subgroupBallotBitCount(active_mask);
-            uint work_offset = 0u;
-            if (subgroupElect())
-            work_offset = atomicAdd(indirect_counts.elems[variant_index].x, count);
-
-            work_offset = subgroupBroadcastFirst(work_offset);
-            work_offset += subgroupBallotExclusiveBitCount(active_mask);
-            res = work_offset;
-            work_to_do = false;
-        }
-    } while(work_to_do);
-    return res;
+    // Merge atomic operations. Compiler would normally do this,
+    // but it might not have figured out that variant_index is uniform.
+    uvec4 active_mask = subgroupBallot(true);
+    uint count = subgroupBallotBitCount(active_mask);
+    uint work_offset = 0u;
+    if (subgroupElect())
+        work_offset = atomicAdd(indirect_counts.elems[variant_index].x, count);
+    work_offset = subgroupBroadcastFirst(work_offset);
+    work_offset += subgroupBallotExclusiveBitCount(active_mask);
+    return work_offset;
 #endif
 }
 #endif
