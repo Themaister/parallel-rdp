@@ -25,6 +25,7 @@
 #include "logging.hpp"
 #include "bitops.hpp"
 #include "luts.hpp"
+#include "timer.hpp"
 #ifdef PARALLEL_RDP_SHADER_DIR
 #include "global_managers.hpp"
 #include "os_filesystem.hpp"
@@ -37,6 +38,7 @@ namespace RDP
 Renderer::Renderer(CommandProcessor &processor_)
 	: processor(processor_)
 {
+	active_submissions = 0;
 }
 
 Renderer::~Renderer()
@@ -1896,8 +1898,18 @@ void Renderer::submit_render_pass(Vulkan::CommandBuffer &cmd)
 
 void Renderer::maintain_queues()
 {
+	// Some conditions dictate if we should flush a render pass.
+	// These heuristics ensures we don't wait too long to flush render passes,
+	// and also ensure that we don't spam submissions too often, causing massive bubbles on GPU.
+
+	// If we get a lot of small render passes in a row, it makes sense to batch them up, e.g. 8 at a time.
+	// If we get a full render pass of ~256 primitives, that's also a good indication we will soon get more primitives.
+	// If we have no pending submissions, the GPU is idle and there is no reason not to submit.
+	// If we haven't submitted anything in a while (1 ms), it's probably fine to submit again.
 	if (pending_render_passes >= ImplementationConstants::MaxPendingRenderPassesBeforeFlush ||
-	    pending_primitives >= Limits::MaxPrimitives)
+	    pending_primitives >= Limits::MaxPrimitives ||
+	    active_submissions.load(std::memory_order_relaxed) == 0 ||
+	    int64_t(Util::get_current_time_nsecs() - last_submit_ns) > 1000000)
 	{
 		submit_to_queue();
 	}
@@ -1913,6 +1925,16 @@ void Renderer::maintain_queues_idle()
 	}
 }
 
+void Renderer::enqueue_fence_wait(Vulkan::Fence fence)
+{
+	CoherencyOperation op;
+	op.fence = std::move(fence);
+	op.unlock_cookie = &active_submissions;
+	active_submissions.fetch_add(1, std::memory_order_relaxed);
+	processor.enqueue_coherency_operation(std::move(op));
+	last_submit_ns = Util::get_current_time_nsecs();
+}
+
 Vulkan::Fence Renderer::submit_to_queue()
 {
 	pending_render_passes = 0;
@@ -1922,6 +1944,7 @@ Vulkan::Fence Renderer::submit_to_queue()
 	{
 		Vulkan::Fence fence;
 		device->submit_empty(Vulkan::CommandBuffer::Type::AsyncCompute, &fence);
+		enqueue_fence_wait(fence);
 		return fence;
 	}
 
@@ -1937,12 +1960,14 @@ Vulkan::Fence Renderer::submit_to_queue()
 	if (is_host_coherent)
 	{
 		device->submit(stream.cmd, &fence);
+		enqueue_fence_wait(fence);
 	}
 	else
 	{
 		CoherencyOperation op;
 		resolve_coherency_gpu_to_host(op, *stream.cmd);
 		device->submit(stream.cmd, &fence);
+		enqueue_fence_wait(fence);
 		op.fence = fence;
 		if (!op.copies.empty())
 			processor.enqueue_coherency_operation(std::move(op));

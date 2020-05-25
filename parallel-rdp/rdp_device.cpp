@@ -1088,6 +1088,9 @@ void CommandProcessor::FenceExecutor::perform_work(CoherencyOperation &work)
 {
 	work.fence->wait();
 
+	if (work.unlock_cookie)
+		work.unlock_cookie->fetch_sub(1, std::memory_order_relaxed);
+
 	if (work.src)
 	{
 		for (auto &copy : work.copies)

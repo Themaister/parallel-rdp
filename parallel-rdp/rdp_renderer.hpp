@@ -332,5 +332,9 @@ private:
 	uint32_t get_byte_size_for_bound_depth_framebuffer() const;
 	void mark_pages_for_gpu_read(uint32_t base_addr, uint32_t byte_count);
 	void lock_pages_for_gpu_write(uint32_t base_addr, uint32_t byte_count);
+
+	std::atomic_uint32_t active_submissions;
+	void enqueue_fence_wait(Vulkan::Fence fence);
+	uint64_t last_submit_ns = 0;
 };
 }

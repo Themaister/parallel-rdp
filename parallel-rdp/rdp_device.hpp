@@ -68,6 +68,7 @@ struct CoherencyOperation
 	uint8_t *dst = nullptr;
 	const Vulkan::Buffer *src = nullptr;
 	std::vector<CoherencyCopy> copies;
+	std::atomic_uint32_t *unlock_cookie = nullptr;
 };
 
 class CommandProcessor
