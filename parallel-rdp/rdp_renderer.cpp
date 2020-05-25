@@ -1972,7 +1972,6 @@ Vulkan::Fence Renderer::submit_to_queue()
 
 	bool need_host_barrier = is_host_coherent || !incoherent.staging_readback;
 
-	// Memory from compute is already made available, make it visible now to host or transfer depending what we do next.
 	stream.cmd->barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
 	                    (need_host_barrier ? VK_PIPELINE_STAGE_HOST_BIT : VK_PIPELINE_STAGE_TRANSFER_BIT),
 	                    (need_host_barrier ? VK_ACCESS_HOST_READ_BIT : VK_ACCESS_TRANSFER_READ_BIT));
