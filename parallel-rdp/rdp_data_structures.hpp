@@ -220,7 +220,7 @@ static_assert((sizeof(SpanInfoOffsets) == 16), "SpanInfoOffsets is not 16 bytes.
 
 struct SpanInterpolationJob
 {
-	uint32_t primitive_index, base_y;
+	uint16_t primitive_index, base_y, max_y, padding;
 };
 static_assert((sizeof(SpanInterpolationJob) == 8), "SpanInterpolationJob is not 8 bytes.");
 

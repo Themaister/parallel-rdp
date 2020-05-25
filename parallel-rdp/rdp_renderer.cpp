@@ -477,7 +477,7 @@ void Renderer::RenderBuffers::init(Vulkan::Device &device, Vulkan::BufferDomain 
 	{
 		Vulkan::BufferViewCreateInfo info = {};
 		info.buffer = span_info_jobs.buffer.get();
-		info.format = VK_FORMAT_R32G32_UINT;
+		info.format = VK_FORMAT_R16G16B16A16_UINT;
 		info.range = span_info_jobs.buffer->get_create_info().size;
 		span_info_jobs_view = device.create_buffer_view(info);
 	}
@@ -1363,6 +1363,7 @@ SpanInfoOffsets Renderer::allocate_span_jobs(const TriangleSetup &setup)
 		SpanInterpolationJob interpolation_job = {};
 		interpolation_job.primitive_index = uint32_t(stream.triangle_setup.size());
 		interpolation_job.base_y = min_active_line + ImplementationConstants::DefaultWorkgroupSize * i;
+		interpolation_job.max_y = max_active_line + 1;
 		stream.span_info_jobs.add(interpolation_job);
 	}
 	return offsets;
