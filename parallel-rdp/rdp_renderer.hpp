@@ -180,17 +180,17 @@ private:
 	void ensure_command_buffer();
 
 	TileInfo tiles[Limits::MaxNumTiles];
-	Vulkan::BufferHandle tmem_instances;
+	Vulkan::BufferHandle tmem_instances[2];
 	Vulkan::BufferHandle span_setups;
 	Vulkan::BufferHandle blender_divider_lut_buffer;
 	Vulkan::BufferViewHandle blender_divider_buffer;
 
-	Vulkan::BufferHandle tile_binning_buffer;
-	Vulkan::BufferHandle tile_binning_buffer_coarse;
+	Vulkan::BufferHandle tile_binning_buffer[2];
+	Vulkan::BufferHandle tile_binning_buffer_coarse[2];
 
-	Vulkan::BufferHandle indirect_dispatch_buffer;
-	Vulkan::BufferHandle tile_work_list;
-	Vulkan::BufferHandle per_tile_offsets;
+	Vulkan::BufferHandle indirect_dispatch_buffer[2];
+	Vulkan::BufferHandle tile_work_list[2];
+	Vulkan::BufferHandle per_tile_offsets[2];
 	Vulkan::BufferHandle per_tile_shaded_color;
 	Vulkan::BufferHandle per_tile_shaded_depth;
 	Vulkan::BufferHandle per_tile_shaded_shaded_alpha;
@@ -281,7 +281,7 @@ private:
 	void submit_span_setup_jobs(Vulkan::CommandBuffer &cmd);
 	void update_deduced_height(const TriangleSetup &setup);
 	void submit_tile_binning_combined(Vulkan::CommandBuffer &cmd);
-	void clear_indirect_buffer(Vulkan::CommandBuffer &cmd);
+	void clear_indirect_buffer(Vulkan::CommandBuffer &cmd, unsigned index);
 	void submit_rasterization(Vulkan::CommandBuffer &cmd, Vulkan::Buffer &tmem);
 
 	SpanInfoOffsets allocate_span_jobs(const TriangleSetup &setup);

@@ -83,8 +83,11 @@ bool Renderer::set_device(Vulkan::Device *device_)
 		info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
 		info.domain = Vulkan::BufferDomain::Device;
 		info.misc = Vulkan::BUFFER_MISC_ZERO_INITIALIZE_BIT;
-		tmem_instances = device->create_buffer(info);
-		device->set_name(*tmem_instances, "tmem-instances");
+		for (auto &tmem : tmem_instances)
+		{
+			tmem = device->create_buffer(info);
+			device->set_name(*tmem, "tmem-instances");
+		}
 		stream.tmem_upload_infos.reserve(Limits::MaxTMEMInstances);
 	}
 
@@ -245,14 +248,22 @@ void Renderer::init_buffers()
 	            (Limits::MaxPrimitives / 32) *
 	            (Limits::MaxWidth / ImplementationConstants::TileWidth) *
 	            (Limits::MaxHeight / ImplementationConstants::TileHeight);
-	tile_binning_buffer = device->create_buffer(info);
-	device->set_name(*tile_binning_buffer, "tile-binning-buffer");
+
+	for (auto &buf : tile_binning_buffer)
+	{
+		buf = device->create_buffer(info);
+		device->set_name(*buf, "tile-binning-buffer");
+	}
 
 	info.size = sizeof(uint32_t) *
 	            (Limits::MaxWidth / ImplementationConstants::TileWidth) *
 	            (Limits::MaxHeight / ImplementationConstants::TileHeight);
-	tile_binning_buffer_coarse = device->create_buffer(info);
-	device->set_name(*tile_binning_buffer_coarse, "tile-binning-buffer-coarse");
+
+	for (auto &tile : tile_binning_buffer_coarse)
+	{
+		tile = device->create_buffer(info);
+		device->set_name(*tile, "tile-binning-buffer-coarse");
+	}
 
 	if (!caps.ubershader)
 	{
@@ -260,12 +271,19 @@ void Renderer::init_buffers()
 		            (Limits::MaxPrimitives / 32) *
 		            (Limits::MaxWidth / ImplementationConstants::TileWidth) *
 		            (Limits::MaxHeight / ImplementationConstants::TileHeight);
-		per_tile_offsets = device->create_buffer(info);
-		device->set_name(*per_tile_offsets, "per-tile-offsets");
+
+		for (auto &tile : per_tile_offsets)
+		{
+			tile = device->create_buffer(info);
+			device->set_name(*tile, "per-tile-offsets");
+		}
 
 		info.size = sizeof(TileRasterWork) * Limits::MaxStaticRasterizationStates * Limits::MaxTileInstances;
-		tile_work_list = device->create_buffer(info);
-		device->set_name(*tile_work_list, "tile-work-list");
+		for (auto &tile : tile_work_list)
+		{
+			tile = device->create_buffer(info);
+			device->set_name(*tile, "tile-work-list");
+		}
 
 		info.size = sizeof(uint32_t) *
 		            Limits::MaxTileInstances *
@@ -1432,7 +1450,7 @@ void Renderer::update_tmem_instances(Vulkan::CommandBuffer &cmd)
 {
 	cmd.set_storage_buffer(0, 0, *rdram, rdram_offset, rdram_size);
 	cmd.set_storage_buffer(0, 1, *tmem);
-	cmd.set_storage_buffer(0, 2, *tmem_instances);
+	cmd.set_storage_buffer(0, 2, *tmem_instances[buffer_instance & 1u]);
 
 	memcpy(cmd.allocate_typed_constant_data<UploadInfo>(1, 0, stream.tmem_upload_infos.size()),
 	       stream.tmem_upload_infos.data(),
@@ -1493,7 +1511,7 @@ void Renderer::submit_span_setup_jobs(Vulkan::CommandBuffer &cmd)
 	cmd.end_region();
 }
 
-void Renderer::clear_indirect_buffer(Vulkan::CommandBuffer &cmd)
+void Renderer::clear_indirect_buffer(Vulkan::CommandBuffer &cmd, unsigned index)
 {
 	cmd.begin_region("clear-indirect-buffer");
 
@@ -1503,7 +1521,7 @@ void Renderer::clear_indirect_buffer(Vulkan::CommandBuffer &cmd)
 	cmd.set_program(shader_bank->clear_indirect_buffer);
 #endif
 
-	cmd.set_storage_buffer(0, 0, *indirect_dispatch_buffer);
+	cmd.set_storage_buffer(0, 0, *indirect_dispatch_buffer[index]);
 
 	static_assert((Limits::MaxStaticRasterizationStates % ImplementationConstants::DefaultWorkgroupSize) == 0, "MaxStaticRasterizationStates does not align.");
 	cmd.set_specialization_constant_mask(1);
@@ -1581,7 +1599,7 @@ void Renderer::submit_rasterization(Vulkan::CommandBuffer &cmd, Vulkan::Buffer &
 
 	for (size_t i = 0; i < stream.static_raster_state_cache.size(); i++)
 	{
-		cmd.set_storage_buffer(1, 0, *tile_work_list,
+		cmd.set_storage_buffer(1, 0, *tile_work_list[buffer_instance & 1u],
 		                       i * sizeof(TileRasterWork) * Limits::MaxTileInstances,
 		                       sizeof(TileRasterWork) * Limits::MaxTileInstances);
 
@@ -1607,7 +1625,7 @@ void Renderer::submit_rasterization(Vulkan::CommandBuffer &cmd, Vulkan::Buffer &
 			cmd.set_specialization_constant_mask(3);
 		}
 
-		cmd.dispatch_indirect(*indirect_dispatch_buffer, 4 * sizeof(uint32_t) * i);
+		cmd.dispatch_indirect(*indirect_dispatch_buffer[buffer_instance & 1u], 4 * sizeof(uint32_t) * i);
 	}
 
 	if (caps.timestamp >= 2)
@@ -1625,14 +1643,14 @@ void Renderer::submit_tile_binning_combined(Vulkan::CommandBuffer &cmd)
 	cmd.set_storage_buffer(0, 0, *instance.gpu.triangle_setup.buffer);
 	cmd.set_storage_buffer(0, 1, *instance.gpu.scissor_setup.buffer);
 	cmd.set_storage_buffer(0, 2, *instance.gpu.state_indices.buffer);
-	cmd.set_storage_buffer(0, 3, *tile_binning_buffer);
-	cmd.set_storage_buffer(0, 4, *tile_binning_buffer_coarse);
+	cmd.set_storage_buffer(0, 3, *tile_binning_buffer[buffer_instance & 1u]);
+	cmd.set_storage_buffer(0, 4, *tile_binning_buffer_coarse[buffer_instance & 1u]);
 
 	if (!caps.ubershader)
 	{
-		cmd.set_storage_buffer(0, 5, *per_tile_offsets);
-		cmd.set_storage_buffer(0, 6, *indirect_dispatch_buffer);
-		cmd.set_storage_buffer(0, 7, *tile_work_list);
+		cmd.set_storage_buffer(0, 5, *per_tile_offsets[buffer_instance & 1u]);
+		cmd.set_storage_buffer(0, 6, *indirect_dispatch_buffer[buffer_instance & 1u]);
+		cmd.set_storage_buffer(0, 7, *tile_work_list[buffer_instance & 1u]);
 	}
 
 	cmd.set_specialization_constant_mask(0x3f);
@@ -1742,13 +1760,13 @@ void Renderer::submit_render_pass(Vulkan::CommandBuffer &cmd)
 		update_tmem_instances(cmd);
 
 	cmd.barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
-	            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | (caps.ubershader ? VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT : 0),
+	            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | (!caps.ubershader ? VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT : 0),
 	            VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT |
-	            (caps.ubershader ? VK_ACCESS_INDIRECT_COMMAND_READ_BIT : 0));
+	            (!caps.ubershader ? VK_ACCESS_INDIRECT_COMMAND_READ_BIT : 0));
 
 	if (need_render_pass && !caps.ubershader)
 	{
-		submit_rasterization(cmd, need_tmem_upload ? *tmem_instances : *tmem);
+		submit_rasterization(cmd, need_tmem_upload ? *tmem_instances[buffer_instance & 1u] : *tmem);
 		cmd.barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
 		            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
 	}
@@ -1770,7 +1788,7 @@ void Renderer::submit_render_pass(Vulkan::CommandBuffer &cmd)
 
 		cmd.set_storage_buffer(0, 0, *rdram, rdram_offset, rdram_size * (is_host_coherent ? 1 : 2));
 		cmd.set_storage_buffer(0, 1, *hidden_rdram);
-		cmd.set_storage_buffer(0, 2, need_tmem_upload ? *tmem_instances : *tmem);
+		cmd.set_storage_buffer(0, 2, need_tmem_upload ? *tmem_instances[buffer_instance & 1u] : *tmem);
 
 		if (!caps.ubershader)
 		{
@@ -1778,7 +1796,7 @@ void Renderer::submit_render_pass(Vulkan::CommandBuffer &cmd)
 			cmd.set_storage_buffer(0, 4, *per_tile_shaded_depth);
 			cmd.set_storage_buffer(0, 5, *per_tile_shaded_shaded_alpha);
 			cmd.set_storage_buffer(0, 6, *per_tile_shaded_coverage);
-			cmd.set_storage_buffer(0, 7, *per_tile_offsets);
+			cmd.set_storage_buffer(0, 7, *per_tile_offsets[buffer_instance & 1u]);
 		}
 
 		cmd.set_storage_buffer(1, 0, *instance.gpu.triangle_setup.buffer);
@@ -1792,8 +1810,8 @@ void Renderer::submit_render_pass(Vulkan::CommandBuffer &cmd)
 		cmd.set_storage_buffer(1, 8, *span_setups);
 		cmd.set_storage_buffer(1, 9, *instance.gpu.span_info_offsets.buffer);
 		cmd.set_buffer_view(1, 10, *blender_divider_buffer);
-		cmd.set_storage_buffer(1, 11, *tile_binning_buffer);
-		cmd.set_storage_buffer(1, 12, *tile_binning_buffer_coarse);
+		cmd.set_storage_buffer(1, 11, *tile_binning_buffer[buffer_instance & 1u]);
+		cmd.set_storage_buffer(1, 12, *tile_binning_buffer_coarse[buffer_instance & 1u]);
 
 		auto *global_fb_info = cmd.allocate_typed_constant_data<GlobalFBInfo>(2, 0, 1);
 
@@ -1889,11 +1907,14 @@ void Renderer::submit_render_pass(Vulkan::CommandBuffer &cmd)
 	}
 
 	if (!caps.ubershader)
-		clear_indirect_buffer(cmd);
+		clear_indirect_buffer(cmd, buffer_instance & 1u);
 
-	stream.cmd->barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
-	                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-	                    VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT);
+	if (!need_tmem_upload)
+	{
+		// Execution barrier if we're reading straight out of TMEM.
+		cmd.barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0,
+		            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0);
+	}
 }
 
 void Renderer::maintain_queues()
@@ -2451,16 +2472,21 @@ void Renderer::ensure_command_buffer()
 	if (!stream.cmd)
 		stream.cmd = device->request_command_buffer(Vulkan::CommandBuffer::Type::AsyncCompute);
 
-	if (!caps.ubershader && !indirect_dispatch_buffer)
+	if (!caps.ubershader && !indirect_dispatch_buffer[0])
 	{
 		Vulkan::BufferCreateInfo indirect_info = {};
 		indirect_info.size = 4 * sizeof(uint32_t) * Limits::MaxStaticRasterizationStates;
 		indirect_info.domain = Vulkan::BufferDomain::Device;
 		indirect_info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
-		indirect_dispatch_buffer = device->create_buffer(indirect_info);
-		device->set_name(*indirect_dispatch_buffer, "indirect-dispatch-buffer");
 
-		clear_indirect_buffer(*stream.cmd);
+		for (auto &buf : indirect_dispatch_buffer)
+		{
+			buf = device->create_buffer(indirect_info);
+			device->set_name(*buf, "indirect-dispatch-buffer");
+		}
+
+		clear_indirect_buffer(*stream.cmd, 0);
+		clear_indirect_buffer(*stream.cmd, 1);
 		stream.cmd->barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
 		                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT);
 	}
