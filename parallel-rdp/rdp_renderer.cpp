@@ -2208,7 +2208,7 @@ void Renderer::resolve_coherency_gpu_to_host(CoherencyOperation &op, Vulkan::Com
 			device->register_time_interval(std::move(start_ts), std::move(end_ts), "coherency-readback");
 #endif
 			cmd.barrier(VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
-			            VK_PIPELINE_STAGE_HOST_BIT,
+			            VK_PIPELINE_STAGE_HOST_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
 			            VK_ACCESS_HOST_READ_BIT);
 		}
 	}
@@ -2327,91 +2327,103 @@ void Renderer::resolve_coherency_host_to_gpu(Vulkan::CommandBuffer &cmd)
 		device->unmap_host_buffer(*incoherent.staging_rdram, Vulkan::MEMORY_ACCESS_WRITE_BIT);
 	}
 
-	if (!masked_page_copies.empty() || !to_clear_write_mask.empty())
+	if (!masked_page_copies.empty() || !to_clear_write_mask.empty() || !buffer_copies.empty())
 	{
-		auto cmd = device->request_command_buffer(Vulkan::CommandBuffer::Type::AsyncCompute);
+		VkPipelineStageFlags dst_stages = 0;
+		VkAccessFlags dst_access = 0;
 
-		if (!masked_page_copies.empty())
+		if (!masked_page_copies.empty() || !to_clear_write_mask.empty())
 		{
-#ifdef PARALLEL_RDP_SHADER_DIR
-			cmd->set_program("rdp://masked_rdram_resolve.comp");
-#else
-			cmd->set_program(shader_bank->masked_rdram_resolve);
-#endif
-			cmd->set_specialization_constant_mask(3);
-			cmd->set_specialization_constant(0, ImplementationConstants::IncoherentPageSize / 4);
-			cmd->set_specialization_constant(1, ImplementationConstants::IncoherentPageSize / 4);
+			dst_stages |= VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+			dst_access |= VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+		}
 
-			cmd->set_storage_buffer(0, 0, *rdram, rdram_offset, rdram_size);
-			cmd->set_storage_buffer(0, 1, *incoherent.staging_rdram);
-			cmd->set_storage_buffer(0, 2, *rdram, rdram_offset + rdram_size, rdram_size);
+		if (!buffer_copies.empty())
+		{
+			dst_stages |= VK_PIPELINE_STAGE_TRANSFER_BIT;
+			dst_access |= VK_ACCESS_TRANSFER_WRITE_BIT;
+		}
+
+		// Wait for previous render pass to complete before we poke at RDRAM.
+		cmd.barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT, dst_stages, dst_access);
+	}
+
+	if (!masked_page_copies.empty())
+	{
+#ifdef PARALLEL_RDP_SHADER_DIR
+		cmd.set_program("rdp://masked_rdram_resolve.comp");
+#else
+		cmd->set_program(shader_bank->masked_rdram_resolve);
+#endif
+		cmd.set_specialization_constant_mask(3);
+		cmd.set_specialization_constant(0, ImplementationConstants::IncoherentPageSize / 4);
+		cmd.set_specialization_constant(1, ImplementationConstants::IncoherentPageSize / 4);
+
+		cmd.set_storage_buffer(0, 0, *rdram, rdram_offset, rdram_size);
+		cmd.set_storage_buffer(0, 1, *incoherent.staging_rdram);
+		cmd.set_storage_buffer(0, 2, *rdram, rdram_offset + rdram_size, rdram_size);
 
 //#define COHERENCY_MASK_TIMESTAMPS
 #ifdef COHERENCY_MASK_TIMESTAMPS
-			Vulkan::QueryPoolHandle start_ts, end_ts;
-			start_ts = cmd->write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+		Vulkan::QueryPoolHandle start_ts, end_ts;
+		start_ts = cmd->write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 #endif
 
-			for (size_t i = 0; i < masked_page_copies.size(); i += 4096)
-			{
-				size_t to_copy = std::min(masked_page_copies.size() - i, size_t(4096));
-				memcpy(cmd->allocate_typed_constant_data<uint32_t>(1, 0, to_copy),
-				       masked_page_copies.data() + i,
-				       to_copy * sizeof(uint32_t));
-				cmd->dispatch(to_copy, 1, 1);
-			}
+		for (size_t i = 0; i < masked_page_copies.size(); i += 4096)
+		{
+			size_t to_copy = std::min(masked_page_copies.size() - i, size_t(4096));
+			memcpy(cmd.allocate_typed_constant_data<uint32_t>(1, 0, to_copy),
+				   masked_page_copies.data() + i,
+				   to_copy * sizeof(uint32_t));
+			cmd.dispatch(to_copy, 1, 1);
+		}
 
 #ifdef COHERENCY_MASK_TIMESTAMPS
-			end_ts = cmd->write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-			device->register_time_interval(std::move(start_ts), std::move(end_ts), "coherent-mask-copy");
+		end_ts = cmd->write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+	device->register_time_interval(std::move(start_ts), std::move(end_ts), "coherent-mask-copy");
 #endif
-		}
-
-		// Could use FillBuffer here, but would need to use TRANSFER stage, and introduce more barriers than needed.
-		if (!to_clear_write_mask.empty())
-		{
-#ifdef PARALLEL_RDP_SHADER_DIR
-			cmd->set_program("rdp://clear_write_mask.comp");
-#else
-			cmd->set_program(shader_bank->clear_write_mask);
-#endif
-			cmd->set_specialization_constant_mask(3);
-			cmd->set_specialization_constant(0, ImplementationConstants::IncoherentPageSize / 4);
-			cmd->set_specialization_constant(1, ImplementationConstants::IncoherentPageSize / 4);
-			cmd->set_storage_buffer(0, 0, *rdram, rdram_offset + rdram_size, rdram_size);
-			for (size_t i = 0; i < to_clear_write_mask.size(); i += 4096)
-			{
-				size_t to_copy = std::min(to_clear_write_mask.size() - i, size_t(4096));
-				memcpy(cmd->allocate_typed_constant_data<uint32_t>(1, 0, to_copy),
-				       to_clear_write_mask.data() + i,
-				       to_copy * sizeof(uint32_t));
-				cmd->dispatch(to_copy, 1, 1);
-			}
-		}
-
-		cmd->barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
-		             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
-		device->submit(cmd);
 	}
+
+	// Could use FillBuffer here, but would need to use TRANSFER stage, and introduce more barriers than needed.
+	if (!to_clear_write_mask.empty())
+	{
+#ifdef PARALLEL_RDP_SHADER_DIR
+		cmd.set_program("rdp://clear_write_mask.comp");
+#else
+		cmd->set_program(shader_bank->clear_write_mask);
+#endif
+		cmd.set_specialization_constant_mask(3);
+		cmd.set_specialization_constant(0, ImplementationConstants::IncoherentPageSize / 4);
+		cmd.set_specialization_constant(1, ImplementationConstants::IncoherentPageSize / 4);
+		cmd.set_storage_buffer(0, 0, *rdram, rdram_offset + rdram_size, rdram_size);
+		for (size_t i = 0; i < to_clear_write_mask.size(); i += 4096)
+		{
+			size_t to_copy = std::min(to_clear_write_mask.size() - i, size_t(4096));
+			memcpy(cmd.allocate_typed_constant_data<uint32_t>(1, 0, to_copy),
+				   to_clear_write_mask.data() + i,
+				   to_copy * sizeof(uint32_t));
+			cmd.dispatch(to_copy, 1, 1);
+		}
+	}
+
+	cmd.barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
+				VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
 
 	// If we cannot map the device memory, use the copy queue.
 	if (!buffer_copies.empty())
 	{
-		auto cmd = device->request_command_buffer(Vulkan::CommandBuffer::Type::AsyncCompute);
-
 //#define COHERENCY_COPY_TIMESTAMPS
 #ifdef COHERENCY_COPY_TIMESTAMPS
 		Vulkan::QueryPoolHandle start_ts, end_ts;
 		start_ts = cmd->write_timestamp(VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
 #endif
-		cmd->copy_buffer(*rdram, *incoherent.staging_rdram, buffer_copies.data(), buffer_copies.size());
+		cmd.copy_buffer(*rdram, *incoherent.staging_rdram, buffer_copies.data(), buffer_copies.size());
 #ifdef COHERENCY_COPY_TIMESTAMPS
 		end_ts = cmd->write_timestamp(VK_PIPELINE_STAGE_TRANSFER_BIT);
 		device->register_time_interval(std::move(start_ts), std::move(end_ts), "coherent-copy");
 #endif
-		cmd->barrier(VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+		cmd.barrier(VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
 		             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
-		device->submit(cmd);
 	}
 
 	if (caps.timestamp)
