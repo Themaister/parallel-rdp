@@ -2315,7 +2315,7 @@ void Renderer::resolve_coherency_host_to_gpu(Vulkan::CommandBuffer &cmd)
 #ifdef PARALLEL_RDP_SHADER_DIR
 		cmd.set_program("rdp://masked_rdram_resolve.comp");
 #else
-		cmd->set_program(shader_bank->masked_rdram_resolve);
+		cmd.set_program(shader_bank->masked_rdram_resolve);
 #endif
 		cmd.set_specialization_constant_mask(3);
 		cmd.set_specialization_constant(0, ImplementationConstants::IncoherentPageSize / 4);
@@ -2352,7 +2352,7 @@ void Renderer::resolve_coherency_host_to_gpu(Vulkan::CommandBuffer &cmd)
 #ifdef PARALLEL_RDP_SHADER_DIR
 		cmd.set_program("rdp://clear_write_mask.comp");
 #else
-		cmd->set_program(shader_bank->clear_write_mask);
+		cmd.set_program(shader_bank->clear_write_mask);
 #endif
 		cmd.set_specialization_constant_mask(3);
 		cmd.set_specialization_constant(0, ImplementationConstants::IncoherentPageSize / 4);
