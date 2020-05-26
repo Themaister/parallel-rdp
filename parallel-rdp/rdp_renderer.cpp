@@ -2067,7 +2067,7 @@ void Renderer::mark_pages_for_gpu_read(uint32_t base_addr, uint32_t byte_count)
 	uint32_t page = start_page;
 	while (page != end_page)
 	{
-		bool pending_writes = (incoherent.page_to_pending_readback[page / 32] & (1u << (page & 31))) != 0 &&
+		bool pending_writes = (incoherent.page_to_pending_readback[page / 32] & (1u << (page & 31))) != 0 ||
 		                      incoherent.pending_writes_for_page[page].load(std::memory_order_relaxed) != 0;
 
 		// We'll do an acquire memory barrier later before we start memcpy-ing from host memory.
