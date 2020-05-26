@@ -164,9 +164,10 @@ bool Renderer::init_caps()
 			LOGW("Current proprietary AMD driver is known to be buggy with 8/16-bit integer arithmetic, disabling support for time being.\n");
 			allow_small_types = false;
 		}
-		else if (features.driver_properties.driverID == VK_DRIVER_ID_AMD_OPEN_SOURCE_KHR)
+		else if (features.driver_properties.driverID == VK_DRIVER_ID_AMD_OPEN_SOURCE_KHR ||
+		         features.driver_properties.driverID == VK_DRIVER_ID_MESA_RADV_KHR)
 		{
-			LOGW("Current RADV driver is known to be slightly faster without 8/16-bit integer arithmetic.\n");
+			LOGW("Current open-source AMD drivers are known to be slightly faster without 8/16-bit integer arithmetic.\n");
 			allow_small_types = false;
 		}
 		else if (features.driver_properties.driverID == VK_DRIVER_ID_NVIDIA_PROPRIETARY_KHR)
