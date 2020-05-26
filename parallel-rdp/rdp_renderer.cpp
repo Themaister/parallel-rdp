@@ -1926,11 +1926,11 @@ void Renderer::maintain_queues()
 	// and also ensure that we don't spam submissions too often, causing massive bubbles on GPU.
 
 	// If we get a lot of small render passes in a row, it makes sense to batch them up, e.g. 8 at a time.
-	// If we get a full render pass of ~256 primitives, that's also a good indication we will soon get more primitives.
+	// If we get 2 full render passes of ~256 primitives, that's also a good indication we should flush since we're getting spammed.
 	// If we have no pending submissions, the GPU is idle and there is no reason not to submit.
-	// If we haven't submitted anything in a while (1 ms), it's probably fine to submit again.
+	// If we haven't submitted anything in a while (1.0 ms), it's probably fine to submit again.
 	if (pending_render_passes >= ImplementationConstants::MaxPendingRenderPassesBeforeFlush ||
-	    pending_primitives >= Limits::MaxPrimitives ||
+	    pending_primitives >= 2 * Limits::MaxPrimitives ||
 	    active_submissions.load(std::memory_order_relaxed) == 0 ||
 	    int64_t(Util::get_current_time_nsecs() - last_submit_ns) > 1000000)
 	{
