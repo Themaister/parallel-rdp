@@ -128,7 +128,7 @@ layout(push_constant, std430) uniform Registers
 } fb_info;
 
 #if !SUBGROUP
-shared uint merged_mask;
+shared uint merged_mask_shared;
 #endif
 
 void main()
@@ -173,7 +173,7 @@ void main()
 
 #if !SUBGROUP
     if (local_index == 0)
-        merged_mask = 0u;
+        merged_mask_shared = 0u;
     barrier();
 #endif
 
@@ -195,8 +195,9 @@ void main()
     uint merged_mask = subgroupBallot(binned).x;
 #else
     if (binned)
-        atomicOr(merged_mask, 1u << local_index);
+        atomicOr(merged_mask_shared, 1u << local_index);
     barrier();
+    uint merged_mask = merged_mask_shared;
 #endif
 
     uint binned_mask = 0u;
