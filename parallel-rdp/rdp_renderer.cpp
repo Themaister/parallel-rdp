@@ -1327,11 +1327,14 @@ void Renderer::draw_shaded_primitive(const TriangleSetup &setup, const Attribute
 
 SpanInfoOffsets Renderer::allocate_span_jobs(const TriangleSetup &setup)
 {
-	int min_active_sub_scanline = std::min(int(setup.yh), int(stream.scissor_state.yhi));
+	int min_active_sub_scanline = std::max(int(setup.yh), int(stream.scissor_state.ylo));
 	int min_active_line = min_active_sub_scanline >> 2;
 
 	int max_active_sub_scanline = std::min(setup.yl - 1, int(stream.scissor_state.yhi) - 1);
 	int max_active_line = max_active_sub_scanline >> 2;
+
+	if (max_active_line < min_active_line)
+		return {};
 
 	// Need to poke into next scanline validation for certain workarounds.
 	int height = std::max(max_active_line - min_active_line + 2, 0);
