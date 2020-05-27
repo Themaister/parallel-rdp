@@ -65,7 +65,7 @@ if (ANDROID)
 else()
     add_granite_offline_tool(rdp-conformance rdp_conformance.cpp conformance_utils.hpp)
 endif()
-target_link_libraries(rdp-conformance PRIVATE rdp-utils atomic)
+target_link_libraries(rdp-conformance PRIVATE rdp-utils)
 target_compile_options(rdp-conformance PRIVATE ${RDP_REPLAYER_CXX_FLAGS})
 set_target_properties(rdp-conformance PROPERTIES LINK_FLAGS "${RDP_REPLAYER_LINK_FLAGS}")
 
