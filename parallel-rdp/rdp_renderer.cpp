@@ -1725,7 +1725,7 @@ void Renderer::submit_tile_binning_combined(Vulkan::CommandBuffer &cmd)
 
 void Renderer::submit_render_pass(Vulkan::CommandBuffer &cmd)
 {
-	bool need_render_pass = fb.width != 0 && fb.deduced_height != 0 && !stream.triangle_setup.empty();
+	bool need_render_pass = fb.width != 0 && fb.deduced_height != 0 && !stream.span_info_jobs.empty();
 	bool need_tmem_upload = !stream.tmem_upload_infos.empty();
 	bool need_submit = need_render_pass || need_tmem_upload;
 	if (!need_submit)
@@ -1745,6 +1745,8 @@ void Renderer::submit_render_pass(Vulkan::CommandBuffer &cmd)
 		submit_span_setup_jobs(cmd);
 		submit_tile_binning_combined(cmd);
 	}
+	else
+		base_primitive_index += stream.triangle_setup.size();
 
 	if (need_tmem_upload)
 		update_tmem_instances(cmd);
@@ -1896,7 +1898,7 @@ void Renderer::submit_render_pass(Vulkan::CommandBuffer &cmd)
 		device->register_time_interval("RDP GPU", std::move(render_pass_start), std::move(render_pass_end), "render-pass", std::move(tag));
 	}
 
-	if (!caps.ubershader)
+	if (need_render_pass && !caps.ubershader)
 		clear_indirect_buffer(cmd);
 
 	cmd.barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
@@ -1990,9 +1992,8 @@ Vulkan::Fence Renderer::submit_to_queue()
 	return fence;
 }
 
-void Renderer::begin_new_context()
+void Renderer::reset_context()
 {
-	buffer_instance = (buffer_instance + 1) % Limits::NumSyncStates;
 	stream.scissor_setup.reset();
 	stream.static_raster_state_cache.reset();
 	stream.depth_blend_state_cache.reset();
@@ -2010,6 +2011,12 @@ void Renderer::begin_new_context()
 	fb.depth_write_pending = false;
 
 	stream.tmem_upload_infos.clear();
+}
+
+void Renderer::begin_new_context()
+{
+	buffer_instance = (buffer_instance + 1) % Limits::NumSyncStates;
+	reset_context();
 }
 
 uint32_t Renderer::get_byte_size_for_bound_color_framebuffer() const
@@ -2407,8 +2414,12 @@ void Renderer::resolve_coherency_host_to_gpu(Vulkan::CommandBuffer &cmd)
 
 void Renderer::flush_queues()
 {
-	if (stream.triangle_setup.empty() && stream.tmem_upload_infos.empty())
+	if (stream.tmem_upload_infos.empty() && stream.span_info_jobs.empty())
+	{
+		base_primitive_index += stream.triangle_setup.size();
+		reset_context();
 		return;
+	}
 
 	if (!is_host_coherent)
 	{

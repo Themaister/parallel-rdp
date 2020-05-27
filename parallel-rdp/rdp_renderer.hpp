@@ -274,6 +274,7 @@ private:
 	void submit_render_pass(Vulkan::CommandBuffer &cmd);
 	Vulkan::Fence submit_to_queue();
 	void begin_new_context();
+	void reset_context();
 	bool need_flush() const;
 	void maintain_queues();
 	void maintain_queues_idle();
