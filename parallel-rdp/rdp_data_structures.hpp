@@ -214,7 +214,7 @@ static_assert((sizeof(SpanSetup) & 15) == 0, "SpanSetup is not aligned to 16 byt
 
 struct SpanInfoOffsets
 {
-	uint32_t offset, ylo, yhi, padding;
+	int32_t offset, ylo, yhi, padding;
 };
 static_assert((sizeof(SpanInfoOffsets) == 16), "SpanInfoOffsets is not 16 bytes.");
 
