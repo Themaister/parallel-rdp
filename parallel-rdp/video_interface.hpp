@@ -79,6 +79,7 @@ private:
 
 	// Frame state.
 	uint32_t frame_count = 0;
+	uint32_t last_valid_frame_count = 0;
 	Vulkan::ImageHandle prev_scanout_image;
 	VkImageLayout prev_image_layout = VK_IMAGE_LAYOUT_UNDEFINED;
 

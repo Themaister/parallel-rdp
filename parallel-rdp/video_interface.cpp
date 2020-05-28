@@ -344,7 +344,9 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const S
 	{
 		frame_count++;
 
-		if (options.persist_frame_on_invalid_input)
+		// A dirty hack to make it work for games which strobe the invalid state (but expect the image to persist),
+		// and games which legitimately render invalid frames for long stretches where a black screen is expected.
+		if (options.persist_frame_on_invalid_input && (frame_count - last_valid_frame_count < 4))
 		{
 			scanout = prev_scanout_image;
 
@@ -363,6 +365,8 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const S
 
 		return scanout;
 	}
+
+	last_valid_frame_count = frame_count;
 
 	bool degenerate = h_res <= 0 || v_res <= 0;
 
