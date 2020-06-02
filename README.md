@@ -252,6 +252,12 @@ Build slangmosh from Granite, and then run:
 slangmosh parallel-rdp/shaders/slangmosh.json --output slangmosh.hpp --vk11 --strip -O --namespace RDP
 ```
 
+### Generating a standalone code base for emulator integration
+
+Run the `generate_standalone_codebase.sh $OUTDIR` script with an output directory `$OUTDIR/` as argument to generate a standalone code base which can be built without any special build system support.
+Include `$OUTDIR/config.mk` if building with Make to make your life easier.
+Note that `slangmosh` must be in your path for this script to run. It executes the command above to build `slangmosh.hpp`.
+
 ## License
 
 paraLLEl-RDP is licensed under the permissive license MIT. See included LICENSE file.
