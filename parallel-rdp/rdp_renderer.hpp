@@ -79,6 +79,8 @@ public:
 	void set_tmem(Vulkan::Buffer *buffer);
 	void set_shader_bank(const ShaderBank *bank);
 
+	bool init_internal_upscaling_factor(unsigned factor);
+
 	void draw_flat_primitive(const TriangleSetup &setup);
 	void draw_shaded_primitive(const TriangleSetup &setup, const AttributeSetup &attr);
 
@@ -117,6 +119,10 @@ private:
 	CommandProcessor &processor;
 	Vulkan::Device *device = nullptr;
 	Vulkan::Buffer *rdram = nullptr;
+
+	Vulkan::BufferHandle upscaling_reference_rdram;
+	Vulkan::BufferHandle upscaling_multisampled_rdram;
+	Vulkan::BufferHandle upscaling_multisampled_hidden_rdram;
 
 	struct
 	{
@@ -285,6 +291,9 @@ private:
 	void clear_indirect_buffer(Vulkan::CommandBuffer &cmd);
 	void submit_rasterization(Vulkan::CommandBuffer &cmd, Vulkan::Buffer &tmem);
 
+	enum class ResolveStage { Pre, Post };
+	void submit_update_upscaled_domain(Vulkan::CommandBuffer &cmd, ResolveStage stage);
+
 	SpanInfoOffsets allocate_span_jobs(const TriangleSetup &setup);
 
 	DerivedSetup build_derived_attributes(const AttributeSetup &attr) const;
@@ -315,6 +324,7 @@ private:
 		bool ubershader = false;
 		bool supports_small_integer_arithmetic = false;
 		bool subgroup_tile_binning = false;
+		unsigned upscaling = 1;
 	} caps;
 
 	struct PipelineExecutor

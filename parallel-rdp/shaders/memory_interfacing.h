@@ -28,6 +28,7 @@
 #include "blender.h"
 #include "depth_test.h"
 #include "coverage.h"
+#include "fb_formats.h"
 
 layout(constant_id = 0) const uint RDRAM_SIZE = 0;
 layout(constant_id = 7) const bool RDRAM_INCOHERENT = false;
@@ -37,12 +38,6 @@ const uint RDRAM_MASK_32 = RDRAM_MASK_8 >> 2u;
 
 layout(constant_id = 1) const int FB_FMT = 0;
 layout(constant_id = 2) const bool FB_COLOR_DEPTH_ALIAS = false;
-
-const int FB_FMT_I4 = 0;
-const int FB_FMT_I8 = 1;
-const int FB_FMT_RGBA5551 = 2;
-const int FB_FMT_IA88 = 3;
-const int FB_FMT_RGBA8888 = 4;
 
 u8x4 current_color;
 bool current_color_dirty;

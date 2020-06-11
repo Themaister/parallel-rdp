@@ -165,6 +165,13 @@ void CommandProcessor::init_renderer()
 	renderer.set_hidden_rdram(hidden_rdram.get());
 	renderer.set_tmem(tmem.get());
 
+	if (const char *env = getenv("PARALLEL_RDP_UPSCALING"))
+	{
+		unsigned factor = strtoul(env, nullptr, 0);
+		if (!renderer.init_internal_upscaling_factor(factor))
+			LOGE("Failed to initialize upscaling.\n");
+	}
+
 	vi.set_device(&device);
 	vi.set_rdram(rdram.get(), rdram_offset, rdram_size);
 	vi.set_hidden_rdram(hidden_rdram.get());

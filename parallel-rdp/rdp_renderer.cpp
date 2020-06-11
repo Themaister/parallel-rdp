@@ -505,6 +505,53 @@ void Renderer::RenderBuffersUpdater::init(Vulkan::Device &device)
 	cpu.init(device, Vulkan::BufferDomain::Host, &gpu);
 }
 
+bool Renderer::init_internal_upscaling_factor(unsigned factor)
+{
+	if (!device || !rdram || !hidden_rdram)
+	{
+		LOGE("Renderer is not initialized.\n");
+		return false;
+	}
+
+	if (factor != 1 && factor != 2)
+	{
+		LOGE("Only 1x (native) and 2x upscaling factors are supported.\n");
+		return false;
+	}
+
+	caps.upscaling = factor;
+
+	if (factor == 1)
+	{
+		upscaling_multisampled_hidden_rdram.reset();
+		upscaling_reference_rdram.reset();
+		upscaling_multisampled_rdram.reset();
+	}
+
+	Vulkan::BufferCreateInfo info;
+	info.domain = Vulkan::BufferDomain::Device;
+	info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+	info.misc = Vulkan::BUFFER_MISC_ZERO_INITIALIZE_BIT;
+
+	info.size = rdram_size;
+	upscaling_reference_rdram = device->create_buffer(info);
+	info.size = rdram_size * factor * factor;
+	upscaling_multisampled_rdram = device->create_buffer(info);
+
+	info.size = hidden_rdram->get_create_info().size * factor * factor;
+	upscaling_multisampled_hidden_rdram = device->create_buffer(info);
+
+	{
+		auto cmd = device->request_command_buffer();
+		cmd->fill_buffer(*upscaling_multisampled_hidden_rdram, 0x03030303);
+		cmd->barrier(VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+		             VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_MEMORY_READ_BIT);
+		device->submit(cmd);
+	}
+
+	return true;
+}
+
 void Renderer::set_rdram(Vulkan::Buffer *buffer, uint8_t *host_rdram, size_t offset, size_t size, bool coherent)
 {
 	rdram = buffer;
@@ -1723,6 +1770,67 @@ void Renderer::submit_tile_binning_combined(Vulkan::CommandBuffer &cmd)
 	cmd.end_region();
 }
 
+void Renderer::submit_update_upscaled_domain(Vulkan::CommandBuffer &cmd, ResolveStage stage)
+{
+#ifdef PARALLEL_RDP_SHADER_DIR
+	if (stage == ResolveStage::Pre)
+		cmd.set_program("rdp://update_upscaled_domain_pre.comp");
+	else
+		cmd.set_program("rdp://update_upscaled_domain_post.comp");
+#else
+	if (stage == ResolveStage::Pre)
+		cmd.set_program(shader_bank->update_upscaled_domain_pre);
+	else
+		cmd.set_program(shader_bank->update_upscaled_domain_post);
+#endif
+
+	cmd.set_storage_buffer(0, 0, *rdram, rdram_offset, rdram_size);
+	cmd.set_storage_buffer(0, 1, *hidden_rdram);
+	cmd.set_storage_buffer(0, 2, *upscaling_reference_rdram);
+	cmd.set_storage_buffer(0, 3, *upscaling_multisampled_rdram);
+	cmd.set_storage_buffer(0, 4, *upscaling_multisampled_hidden_rdram);
+
+	cmd.set_specialization_constant_mask(0x1f);
+	cmd.set_specialization_constant(0, uint32_t(rdram_size));
+	cmd.set_specialization_constant(1, uint32_t(fb.fmt));
+	cmd.set_specialization_constant(2, int(fb.addr == fb.depth_addr));
+	cmd.set_specialization_constant(3, ImplementationConstants::DefaultWorkgroupSize);
+	cmd.set_specialization_constant(4, caps.upscaling * caps.upscaling);
+
+	unsigned num_pixels = fb.width * fb.deduced_height;
+
+	unsigned num_workgroups =
+			(num_pixels + ImplementationConstants::DefaultWorkgroupSize - 1) /
+			ImplementationConstants::DefaultWorkgroupSize;
+
+	struct Push
+	{
+		uint32_t pixels;
+		uint32_t fb_addr, fb_depth_addr;
+	} push = {};
+	push.pixels = num_pixels;
+	push.fb_addr = fb.addr;
+	push.fb_depth_addr = fb.depth_addr >> 1;
+
+	switch (fb.fmt)
+	{
+	case FBFormat::RGBA8888:
+		push.fb_addr >>= 2;
+		break;
+
+	case FBFormat::RGBA5551:
+	case FBFormat::IA88:
+		push.fb_addr >>= 1;
+		break;
+
+	default:
+		break;
+	}
+
+	cmd.push_constants(&push, 0, sizeof(push));
+	cmd.dispatch(num_workgroups, 1, 1);
+}
+
 void Renderer::submit_render_pass(Vulkan::CommandBuffer &cmd)
 {
 	bool need_render_pass = fb.width != 0 && fb.deduced_height != 0 && !stream.span_info_jobs.empty();
@@ -1744,6 +1852,8 @@ void Renderer::submit_render_pass(Vulkan::CommandBuffer &cmd)
 	{
 		submit_span_setup_jobs(cmd);
 		submit_tile_binning_combined(cmd);
+		if (caps.upscaling > 1)
+			submit_update_upscaled_domain(cmd, ResolveStage::Pre);
 	}
 	else
 		base_primitive_index += stream.triangle_setup.size();
@@ -1896,6 +2006,27 @@ void Renderer::submit_render_pass(Vulkan::CommandBuffer &cmd)
 		tag = "(" + std::to_string(fb.width) + " x " + std::to_string(fb.deduced_height) + ")";
 		tag += " (" + std::to_string(stream.triangle_setup.size()) + " triangles)";
 		device->register_time_interval("RDP GPU", std::move(render_pass_start), std::move(render_pass_end), "render-pass", std::move(tag));
+	}
+
+	// TODO: If upscaling, we should flush submit here so we don't wait on irrelevant work happening on GPU in sync mode.
+
+	if (caps.upscaling > 1)
+	{
+		cmd.barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
+		            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+		            VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+
+		// TODO: Could probably do this in the render pass itself, just write output to two buffers ...
+		// This is more composable for now.
+		submit_update_upscaled_domain(cmd, ResolveStage::Post);
+
+		// TODO: Submit upscaled shading work.
+
+		cmd.barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
+		            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+		            VK_ACCESS_SHADER_READ_BIT);
+
+		// TODO: Submit memory interfacing pass for upscaled domain here.
 	}
 
 	if (need_render_pass && !caps.ubershader)
