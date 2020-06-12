@@ -111,7 +111,7 @@ void main()
         // In do_offset mode, varyings are latched at last subpixel line instead of first (for some reason).
         if (do_offset)
         {
-            xh += 3 * setup.dxhdy;
+            xh += (SCALING_FACTOR * 3) * setup.dxhdy;
 
             ivec4 drgba_deh = attr.drgba_de & ~0x1ff;
             ivec4 drgba_dyh = attr.drgba_dy & ~0x1ff;
@@ -126,11 +126,11 @@ void main()
         int xfrac = skip_xfrac ? 0 : ((xh >> 8) & 0xff);
 
         ivec4 rgba = attr.rgba;
-        rgba += attr.drgba_de * (y - y_interpolation_base);
+        rgba += (attr.drgba_de * (y - y_interpolation_base)) / SCALING_FACTOR;
         rgba = ((rgba & ~0x1ff) + (drgba_diff - xfrac * ((attr.drgba_dx >> 8) & ~1)) / SCALING_FACTOR) & ~0x3ff;
 
         ivec4 stzw = attr.stzw;
-        stzw += attr.dstzw_de * (y - y_interpolation_base);
+        stzw += (attr.dstzw_de * (y - y_interpolation_base)) / SCALING_FACTOR;
         stzw = ((stzw & ~0x1ff) + (dstzw_diff - xfrac * ((attr.dstzw_dx >> 8) & ~1)) / SCALING_FACTOR) & ~0x3ff;
 
         span_setup.rgba = rgba;
@@ -176,8 +176,8 @@ void main()
 
     bvec4 invalid_line = greaterThan(xleft >> I16_C(1), xright >> I16_C(1));
 
-    i16x4 lo_scissor = i16x4(scissor.xlo << 1);
-    i16x4 hi_scissor = i16x4(scissor.xhi << 1);
+    i16x4 lo_scissor = i16x4(SCALING_FACTOR * (scissor.xlo << 1));
+    i16x4 hi_scissor = i16x4(SCALING_FACTOR * (scissor.xhi << 1));
 
     bool all_over = all(greaterThanEqual(min(xleft, xright), hi_scissor));
     bool all_under = all(lessThan(max(xleft, xright), lo_scissor));
