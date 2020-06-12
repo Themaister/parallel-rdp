@@ -359,5 +359,7 @@ private:
 	std::atomic_uint32_t active_submissions;
 	void enqueue_fence_wait(Vulkan::Fence fence);
 	uint64_t last_submit_ns = 0;
+
+	friend class VideoInterface;
 };
 }

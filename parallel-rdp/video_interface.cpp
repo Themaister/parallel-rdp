@@ -21,6 +21,7 @@
  */
 
 #include "video_interface.hpp"
+#include "rdp_renderer.hpp"
 #include "luts.hpp"
 
 #ifndef PARALLEL_RDP_SHADER_DIR
@@ -43,6 +44,11 @@ void VideoInterface::set_device(Vulkan::Device *device_)
 
 	if (const char *timestamp_env = getenv("PARALLEL_RDP_BENCH"))
 		timestamp = strtol(timestamp_env, nullptr, 0) > 0;
+}
+
+void VideoInterface::set_renderer(Renderer *renderer_)
+{
+	renderer = renderer_;
 }
 
 int VideoInterface::resolve_shader_define(const char *name, const char *define) const
@@ -198,9 +204,9 @@ VideoInterface::Registers VideoInterface::decode_vi_registers() const
 		reg.left_clamp = true;
 	}
 
-	if (reg.h_start + reg.h_res > 640)
+	if (reg.h_start + reg.h_res > VI_SCANOUT_WIDTH)
 	{
-		reg.h_res = 640 - reg.h_start;
+		reg.h_res = VI_SCANOUT_WIDTH - reg.h_start;
 		reg.right_clamp = true;
 	}
 
@@ -230,7 +236,7 @@ void VideoInterface::scanout_memory_range(unsigned &offset, unsigned &length)
 	int x_off = divot ? -3 : -2;
 	int y_off = -2;
 
-	if (reg.vi_offset == 0 || reg.h_res <= 0 || reg.h_start >= 640)
+	if (reg.vi_offset == 0 || reg.h_res <= 0 || reg.h_start >= VI_SCANOUT_WIDTH)
 	{
 		offset = 0;
 		length = 0;
@@ -297,7 +303,7 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const S
 	bool field_state = regs.v_current_line == 0;
 	bool divot = (regs.status & VI_CONTROL_DIVOT_ENABLE_BIT) != 0;
 
-	if (regs.h_res <= 0 || regs.h_start >= 640)
+	if (regs.h_res <= 0 || regs.h_start >= VI_SCANOUT_WIDTH)
 	{
 		frame_count++;
 
@@ -337,15 +343,26 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const S
 	{
 		auto async_cmd = device->request_command_buffer(Vulkan::CommandBuffer::Type::AsyncCompute);
 
+		if (scaling_factor > 1)
+		{
+			renderer->submit_update_upscaled_domain(*async_cmd, Renderer::ResolveStage::Pre);
+			async_cmd->barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
+			                   VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
+		}
+
 		if (timestamp)
 			start_ts = async_cmd->write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 
 		// Need to sample a 2-pixel border to have room for AA filter and divot.
-		int aa_width = regs.max_x + 2 + 4 + int(divot) * 2;
+		int extract_width = regs.max_x + 2 + 4 + int(divot) * 2;
 		// 1 pixel border on top and bottom.
-		int aa_height = regs.max_y + 1 + 4;
+		int extract_height = regs.max_y + 1 + 4;
 
-		Vulkan::ImageCreateInfo rt_info = Vulkan::ImageCreateInfo::render_target(aa_width, aa_height, VK_FORMAT_R8G8B8A8_UINT);
+		Vulkan::ImageCreateInfo rt_info = Vulkan::ImageCreateInfo::render_target(
+				extract_width * scaling_factor,
+				extract_height * scaling_factor,
+				VK_FORMAT_R8G8B8A8_UINT);
+
 		rt_info.usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
 		rt_info.initial_layout = VK_IMAGE_LAYOUT_UNDEFINED;
 		rt_info.misc = Vulkan::IMAGE_MISC_CONCURRENT_QUEUE_GRAPHICS_BIT |
@@ -363,8 +380,17 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const S
 		async_cmd->set_program(shader_bank->extract_vram);
 #endif
 		async_cmd->set_storage_texture(0, 0, vram_image->get_view());
-		async_cmd->set_storage_buffer(0, 1, *rdram, rdram_offset, rdram_size);
-		async_cmd->set_storage_buffer(0, 2, *hidden_rdram);
+
+		if (scaling_factor > 1)
+		{
+			async_cmd->set_storage_buffer(0, 1, *renderer->upscaling_multisampled_rdram);
+			async_cmd->set_storage_buffer(0, 2, *renderer->upscaling_multisampled_hidden_rdram);
+		}
+		else
+		{
+			async_cmd->set_storage_buffer(0, 1, *rdram, rdram_offset, rdram_size);
+			async_cmd->set_storage_buffer(0, 2, *hidden_rdram);
+		}
 
 		struct Push
 		{
@@ -384,15 +410,19 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const S
 		push.fb_width = regs.vi_width;
 		push.x_offset = divot ? -3 : -2;
 		push.y_offset = -2;
-		push.x_res = aa_width;
-		push.y_res = aa_height;
+		push.x_res = extract_width * scaling_factor;
+		push.y_res = extract_height * scaling_factor;
 
-		async_cmd->set_specialization_constant_mask(3);
+		async_cmd->set_specialization_constant_mask(7);
 		async_cmd->set_specialization_constant(0, uint32_t(rdram_size));
 		async_cmd->set_specialization_constant(1, regs.status & (VI_CONTROL_TYPE_MASK | VI_CONTROL_META_AA_BIT));
+		async_cmd->set_specialization_constant(2, trailing_zeroes(scaling_factor));
 
 		async_cmd->push_constants(&push, 0, sizeof(push));
-		async_cmd->dispatch((aa_width + 15) / 16, (aa_height + 7) / 8, 1);
+		async_cmd->dispatch((extract_width * scaling_factor + 15) / 16,
+		                    (extract_height * scaling_factor + 7) / 8,
+		                    1);
+
 		// Just enforce an execution barrier here for rendering work in next frame.
 		async_cmd->barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0,
 		                   VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0);
@@ -409,6 +439,15 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const S
 		                           VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, true);
 	}
 
+	regs.h_start *= int(scaling_factor);
+	regs.v_start *= int(scaling_factor);
+	regs.x_start *= int(scaling_factor);
+	regs.y_start *= int(scaling_factor);
+	regs.h_end *= int(scaling_factor);
+	regs.v_end *= int(scaling_factor);
+	regs.max_x = regs.max_x * int(scaling_factor) + int(scaling_factor - 1);
+	regs.max_y = regs.max_y * int(scaling_factor) + int(scaling_factor - 1);
+
 	auto cmd = device->request_command_buffer();
 
 	if (debug_channel)
@@ -423,7 +462,7 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const S
 	Vulkan::ImageHandle aa_image;
 
 	// If we risk sampling same Y coordinate for two scanlines we can trigger this case, so add workaround paths for it.
-	bool fetch_bug = regs.y_add < 1024;
+	bool fetch_bug = (regs.y_add < 1024) && scaling_factor == 1;
 
 	// AA -> divot could probably be done with compute and shared memory, but ideally this is done in fragment shaders in this implementation
 	// so that we can run higher-priority compute shading workload async in the async queue.
@@ -434,8 +473,11 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const S
 		// For the AA pass, we need to figure out how many pixels we might need to read.
 		int aa_width = regs.max_x + 3 + int(divot) * 2;
 		int aa_height = regs.max_y + 2;
+		aa_width *= int(scaling_factor);
+		aa_height *= int(scaling_factor);
 
-		Vulkan::ImageCreateInfo rt_info = Vulkan::ImageCreateInfo::render_target(aa_width, aa_height, VK_FORMAT_R8G8B8A8_UINT);
+		Vulkan::ImageCreateInfo rt_info = Vulkan::ImageCreateInfo::render_target(aa_width, aa_height,
+		                                                                         VK_FORMAT_R8G8B8A8_UINT);
 		rt_info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
 		rt_info.initial_layout = VK_IMAGE_LAYOUT_UNDEFINED;
 		rt_info.layers = fetch_bug ? 2 : 1;
@@ -499,8 +541,8 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const S
 			int32_t y_offset;
 		} push = {};
 
-		push.x_offset = 2;
-		push.y_offset = 2;
+		push.x_offset = 2 * int(scaling_factor);
+		push.y_offset = 2 * int(scaling_factor);
 
 		cmd->push_constants(&push, 0, sizeof(push));
 
@@ -532,8 +574,11 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const S
 		// For the divot pass, we need to figure out how many pixels we might need to read.
 		int divot_width = regs.max_x + 2;
 		int divot_height = regs.max_y + 2;
+		divot_width *= int(scaling_factor);
+		divot_height *= int(scaling_factor);
 
-		Vulkan::ImageCreateInfo rt_info = Vulkan::ImageCreateInfo::render_target(divot_width, divot_height, VK_FORMAT_R8G8B8A8_UINT);
+		Vulkan::ImageCreateInfo rt_info = Vulkan::ImageCreateInfo::render_target(divot_width, divot_height,
+		                                                                         VK_FORMAT_R8G8B8A8_UINT);
 		rt_info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
 		rt_info.initial_layout = VK_IMAGE_LAYOUT_UNDEFINED;
 		rt_info.layers = fetch_bug ? 2 : 1;
@@ -614,7 +659,10 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const S
 	Vulkan::ImageHandle scale_image;
 	{
 		Vulkan::ImageCreateInfo rt_info = Vulkan::ImageCreateInfo::render_target(
-				640, (regs.is_pal ? VI_V_RES_PAL: VI_V_RES_NTSC) >> int(!serrate), VK_FORMAT_R8G8B8A8_UNORM);
+				VI_SCANOUT_WIDTH * scaling_factor,
+				((regs.is_pal ? VI_V_RES_PAL: VI_V_RES_NTSC) >> int(!serrate)) * scaling_factor,
+				VK_FORMAT_R8G8B8A8_UNORM);
+
 		rt_info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 		rt_info.initial_layout = VK_IMAGE_LAYOUT_UNDEFINED;
 		rt_info.misc = Vulkan::IMAGE_MISC_MUTABLE_SRGB_BIT;
@@ -696,12 +744,12 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const S
 
 		if (!regs.left_clamp)
 		{
-			regs.h_start += 8;
-			regs.h_res -= 8;
+			regs.h_start += 8 * int(scaling_factor);
+			regs.h_res -= 8 * int(scaling_factor);
 		}
 
 		if (!regs.right_clamp)
-			regs.h_res -= 7;
+			regs.h_res -= 7 * int(scaling_factor);
 
 		cmd->push_constants(&push, 0, sizeof(push));
 

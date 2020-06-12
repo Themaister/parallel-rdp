@@ -178,6 +178,7 @@ void CommandProcessor::init_renderer()
 	vi.set_device(&device);
 	vi.set_rdram(rdram.get(), rdram_offset, rdram_size);
 	vi.set_hidden_rdram(hidden_rdram.get());
+	vi.set_renderer(&renderer);
 
 #ifndef PARALLEL_RDP_SHADER_DIR
 	shader_bank.reset(new ShaderBank(device, [&](const char *name, const char *define) -> int {

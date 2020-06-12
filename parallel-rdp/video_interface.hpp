@@ -43,10 +43,13 @@ struct ScanoutOptions
 	} vi;
 };
 
+class Renderer;
+
 class VideoInterface : public Vulkan::DebugChannelInterface
 {
 public:
 	void set_device(Vulkan::Device *device);
+	void set_renderer(Renderer *renderer);
 	void set_vi_register(VIRegister reg, uint32_t value);
 
 	void set_rdram(const Vulkan::Buffer *rdram, size_t offset, size_t size);
@@ -60,6 +63,7 @@ public:
 
 private:
 	Vulkan::Device *device = nullptr;
+	Renderer *renderer = nullptr;
 	uint32_t vi_registers[unsigned(VIRegister::Count)] = {};
 	const Vulkan::Buffer *rdram = nullptr;
 	const Vulkan::Buffer *hidden_rdram = nullptr;
