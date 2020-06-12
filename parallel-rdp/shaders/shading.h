@@ -23,6 +23,13 @@
 #ifndef SHADING_H_
 #define SHADING_H_
 
+#ifdef RASTERIZER_SPEC_CONSTANT
+const int SCALING_LOG2 = (STATIC_STATE_FLAGS >> RASTERIZATION_UPSCALING_LOG2_BIT_OFFSET) & 3;
+#else
+const int SCALING_LOG2 = 0;
+#endif
+const int SCALING_FACTOR = 1 << SCALING_LOG2;
+
 #include "coverage.h"
 #include "interpolation.h"
 #include "perspective.h"
@@ -33,7 +40,7 @@
 bool shade_pixel(int x, int y, uint primitive_index, out ShadedData shaded)
 {
 	SpanInfoOffsets span_offsets = load_span_offsets(primitive_index);
-	if (y < span_offsets.ylo || y > span_offsets.yhi)
+	if (y < span_offsets.ylo || y > (span_offsets.yhi * SCALING_FACTOR + (SCALING_FACTOR - 1)))
 		return false;
 
 	SpanSetup span_setup = load_span_setup(span_offsets.offset + (y - span_offsets.ylo));

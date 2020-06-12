@@ -1590,7 +1590,7 @@ void Renderer::clear_indirect_buffer(Vulkan::CommandBuffer &cmd)
 	cmd.end_region();
 }
 
-void Renderer::submit_rasterization(Vulkan::CommandBuffer &cmd, Vulkan::Buffer &tmem, bool upscale)
+void Renderer::submit_rasterization(Vulkan::CommandBuffer &cmd, Vulkan::Buffer &tmem, bool upscaling)
 {
 	cmd.begin_region("rasterization");
 	auto &instance = buffer_instances[buffer_instance];
@@ -1657,6 +1657,8 @@ void Renderer::submit_rasterization(Vulkan::CommandBuffer &cmd, Vulkan::Buffer &
 	if (caps.timestamp >= 2)
 		start_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 
+	uint32_t scale_log2_bit = (upscaling ? trailing_zeroes(caps.upscaling) : 0u) << RASTERIZATION_UPSCALING_LOG2_BIT_OFFSET;
+
 	for (size_t i = 0; i < stream.static_raster_state_cache.size(); i++)
 	{
 		cmd.set_storage_buffer(1, 0, *tile_work_list,
@@ -1664,13 +1666,15 @@ void Renderer::submit_rasterization(Vulkan::CommandBuffer &cmd, Vulkan::Buffer &
 		                       sizeof(TileRasterWork) * caps.max_num_tile_instances);
 
 		auto &state = stream.static_raster_state_cache.data()[i];
-		cmd.set_specialization_constant(2, state.flags | RASTERIZATION_USE_SPECIALIZATION_CONSTANT_BIT);
+		cmd.set_specialization_constant(2, state.flags | RASTERIZATION_USE_SPECIALIZATION_CONSTANT_BIT | scale_log2_bit);
 		cmd.set_specialization_constant(3, state.combiner[0].rgb);
 		cmd.set_specialization_constant(4, state.combiner[0].alpha);
 		cmd.set_specialization_constant(5, state.combiner[1].rgb);
 		cmd.set_specialization_constant(6, state.combiner[1].alpha);
 
-		cmd.set_specialization_constant(7, state.dither | (state.texture_size << 8) | (state.texture_fmt << 16));
+		cmd.set_specialization_constant(7, state.dither |
+		                                   (state.texture_size << 8u) |
+		                                   (state.texture_fmt << 16u));
 		cmd.set_specialization_constant_mask(0xff);
 
 		if (!caps.force_sync && !cmd.flush_pipeline_state_without_blocking())
@@ -1682,7 +1686,8 @@ void Renderer::submit_rasterization(Vulkan::CommandBuffer &cmd, Vulkan::Buffer &
 				pending_async_pipelines.insert(compile.hash);
 				pipeline_worker->push(std::move(compile));
 			}
-			cmd.set_specialization_constant_mask(3);
+			cmd.set_specialization_constant_mask(7);
+			cmd.set_specialization_constant(2, scale_log2_bit);
 		}
 
 		cmd.dispatch_indirect(*indirect_dispatch_buffer, 4 * sizeof(uint32_t) * i);
