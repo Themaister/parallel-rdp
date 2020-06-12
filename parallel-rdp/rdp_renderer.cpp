@@ -944,7 +944,7 @@ unsigned Renderer::compute_conservative_max_num_tiles(const TriangleSetup &setup
 	int end_y = (setup.yl - 1) | (SUBPIXELS_Y - 1);
 
 	start_y = std::max(int(stream.scissor_state.ylo), start_y);
-	end_y = std::min(int(stream.scissor_state.yhi), end_y);
+	end_y = std::min(int(stream.scissor_state.yhi) - 1, end_y);
 
 	// Y is clipped out, exit early.
 	if (end_y < start_y)
@@ -966,7 +966,7 @@ unsigned Renderer::compute_conservative_max_num_tiles(const TriangleSetup &setup
 	int end_x = std::max(std::max(upper.second, lower.second), std::max(mid.second, mid1.second));
 
 	start_x = std::max(start_x, int(stream.scissor_state.xlo) >> 2);
-	end_x = std::min(end_x, int(stream.scissor_state.xhi) >> 2);
+	end_x = std::min(end_x, ((int(stream.scissor_state.xhi) + 3) >> 2) - 1);
 
 	if (end_x < start_x)
 		return 0;
@@ -1697,12 +1697,13 @@ void Renderer::submit_tile_binning_combined(Vulkan::CommandBuffer &cmd, bool ups
 		cmd.set_storage_buffer(0, 7, *tile_work_list);
 	}
 
-	cmd.set_specialization_constant_mask(0x3f);
+	cmd.set_specialization_constant_mask(0x7f);
 	cmd.set_specialization_constant(1, ImplementationConstants::TileWidth);
 	cmd.set_specialization_constant(2, ImplementationConstants::TileHeight);
 	cmd.set_specialization_constant(3, Limits::MaxPrimitives);
-	cmd.set_specialization_constant(4, Limits::MaxWidth);
+	cmd.set_specialization_constant(4, (upscale ? caps.upscaling : 1u) * Limits::MaxWidth);
 	cmd.set_specialization_constant(5, Limits::MaxTileInstances);
+	cmd.set_specialization_constant(6, upscale ? caps.upscaling : 1u);
 
 	struct PushData
 	{
@@ -1711,6 +1712,13 @@ void Renderer::submit_tile_binning_combined(Vulkan::CommandBuffer &cmd, bool ups
 	} push = {};
 	push.width = fb.width;
 	push.height = fb.deduced_height;
+
+	if (upscale)
+	{
+		push.width *= caps.upscaling;
+		push.height *= caps.upscaling;
+	}
+
 	push.num_primitives = uint32_t(stream.triangle_setup.size());
 	unsigned num_primitives_32 = (push.num_primitives + 31) / 32;
 
@@ -1727,10 +1735,10 @@ void Renderer::submit_tile_binning_combined(Vulkan::CommandBuffer &cmd, bool ups
 	{
 #ifdef PARALLEL_RDP_SHADER_DIR
 		cmd.set_program("rdp://tile_binning_combined.comp", {
-				{ "DEBUG_ENABLE", debug_channel ? 1 : 0 },
-				{ "SUBGROUP", 1 },
-				{ "UBERSHADER", int(caps.ubershader) },
-				{ "SMALL_TYPES", caps.supports_small_integer_arithmetic ? 1 : 0 },
+			{ "DEBUG_ENABLE", debug_channel ? 1 : 0 },
+			{ "SUBGROUP", 1 },
+			{ "UBERSHADER", int(caps.ubershader) },
+			{ "SMALL_TYPES", caps.supports_small_integer_arithmetic ? 1 : 0 },
 		});
 #else
 		cmd.set_program(shader_bank->tile_binning_combined);
@@ -1746,10 +1754,10 @@ void Renderer::submit_tile_binning_combined(Vulkan::CommandBuffer &cmd, bool ups
 	{
 #ifdef PARALLEL_RDP_SHADER_DIR
 		cmd.set_program("rdp://tile_binning_combined.comp", {
-				{ "DEBUG_ENABLE", debug_channel ? 1 : 0 },
-				{ "SUBGROUP", 0 },
-				{ "UBERSHADER", int(caps.ubershader) },
-				{ "SMALL_TYPES", caps.supports_small_integer_arithmetic ? 1 : 0 },
+			{ "DEBUG_ENABLE", debug_channel ? 1 : 0 },
+			{ "SUBGROUP", 0 },
+			{ "UBERSHADER", int(caps.ubershader) },
+			{ "SMALL_TYPES", caps.supports_small_integer_arithmetic ? 1 : 0 },
 		});
 #else
 		cmd.set_program(shader_bank->tile_binning_combined);
