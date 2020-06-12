@@ -127,11 +127,11 @@ void main()
 
         ivec4 rgba = attr.rgba;
         rgba += attr.drgba_de * (y - y_interpolation_base);
-        rgba = ((rgba & ~0x1ff) + drgba_diff - xfrac * ((attr.drgba_dx >> 8) & ~1)) & ~0x3ff;
+        rgba = ((rgba & ~0x1ff) + (drgba_diff - xfrac * ((attr.drgba_dx >> 8) & ~1)) / SCALING_FACTOR) & ~0x3ff;
 
         ivec4 stzw = attr.stzw;
         stzw += attr.dstzw_de * (y - y_interpolation_base);
-        stzw = ((stzw & ~0x1ff) + dstzw_diff - xfrac * ((attr.dstzw_dx >> 8) & ~1)) & ~0x3ff;
+        stzw = ((stzw & ~0x1ff) + (dstzw_diff - xfrac * ((attr.dstzw_dx >> 8) & ~1)) / SCALING_FACTOR) & ~0x3ff;
 
         span_setup.rgba = rgba;
         span_setup.stzw = stzw;
@@ -141,7 +141,6 @@ void main()
     // Check Y dimension.
     int yh_interpolation_base = int(setup.yh) & ~(SUBPIXELS - 1);
     int ym_interpolation_base = int(setup.ym);
-
     yh_interpolation_base *= SCALING_FACTOR;
     ym_interpolation_base *= SCALING_FACTOR;
 

@@ -332,6 +332,11 @@ private:
 		bool supports_small_integer_arithmetic = false;
 		bool subgroup_tile_binning = false;
 		unsigned upscaling = 1;
+		unsigned max_num_tile_instances = Limits::MaxTileInstances;
+		unsigned max_tiles_x = ImplementationConstants::MaxTilesX;
+		unsigned max_tiles_y = ImplementationConstants::MaxTilesY;
+		unsigned max_width = Limits::MaxWidth;
+		unsigned max_height = Limits::MaxHeight;
 	} caps;
 
 	struct PipelineExecutor

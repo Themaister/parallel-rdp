@@ -169,6 +169,7 @@ void CommandProcessor::init_renderer()
 	if (const char *env = getenv("PARALLEL_RDP_UPSCALING"))
 	{
 		unsigned factor = strtoul(env, nullptr, 0);
+		LOGI("Enabling upscaling: %ux.\n", factor);
 		opts.upscaling_factor = factor;
 	}
 

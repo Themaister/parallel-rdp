@@ -52,6 +52,15 @@ void Renderer::set_shader_bank(const ShaderBank *bank)
 
 bool Renderer::init_renderer(const RendererOptions &options)
 {
+	if (options.upscaling_factor == 0)
+		return false;
+
+	caps.max_width = options.upscaling_factor * Limits::MaxWidth;
+	caps.max_height = options.upscaling_factor * Limits::MaxHeight;
+	caps.max_tiles_x = options.upscaling_factor * ImplementationConstants::MaxTilesX;
+	caps.max_tiles_y = options.upscaling_factor * ImplementationConstants::MaxTilesY;
+	caps.max_num_tile_instances = options.upscaling_factor * options.upscaling_factor * Limits::MaxTileInstances;
+
 #ifdef PARALLEL_RDP_SHADER_DIR
 	pipeline_worker.reset(new WorkerThread<Vulkan::DeferredPipelineCompile, PipelineExecutor>(
 			Granite::Global::create_thread_context(), { device }));
@@ -249,15 +258,15 @@ void Renderer::init_buffers(const RendererOptions &options)
 
 	info.size = sizeof(uint32_t) *
 	            (Limits::MaxPrimitives / 32) *
-	            options.upscaling_factor * (Limits::MaxWidth / ImplementationConstants::TileWidth) *
-	            options.upscaling_factor * (Limits::MaxHeight / ImplementationConstants::TileHeight);
+	            options.upscaling_factor * (caps.max_width / ImplementationConstants::TileWidth) *
+	            options.upscaling_factor * (caps.max_height / ImplementationConstants::TileHeight);
 
 	tile_binning_buffer = device->create_buffer(info);
 	device->set_name(*tile_binning_buffer, "tile-binning-buffer");
 
 	info.size = sizeof(uint32_t) *
-	            options.upscaling_factor * (Limits::MaxWidth / ImplementationConstants::TileWidth) *
-	            options.upscaling_factor * (Limits::MaxHeight / ImplementationConstants::TileHeight);
+	            options.upscaling_factor * (caps.max_width / ImplementationConstants::TileWidth) *
+	            options.upscaling_factor * (caps.max_height / ImplementationConstants::TileHeight);
 
 	tile_binning_buffer_coarse = device->create_buffer(info);
 	device->set_name(*tile_binning_buffer_coarse, "tile-binning-buffer-coarse");
@@ -266,18 +275,18 @@ void Renderer::init_buffers(const RendererOptions &options)
 	{
 		info.size = sizeof(uint32_t) *
 		            (Limits::MaxPrimitives / 32) *
-		            options.upscaling_factor * (Limits::MaxWidth / ImplementationConstants::TileWidth) *
-		            options.upscaling_factor * (Limits::MaxHeight / ImplementationConstants::TileHeight);
+		            options.upscaling_factor * (caps.max_width / ImplementationConstants::TileWidth) *
+		            options.upscaling_factor * (caps.max_height / ImplementationConstants::TileHeight);
 
 		per_tile_offsets = device->create_buffer(info);
 		device->set_name(*per_tile_offsets, "per-tile-offsets");
 
-		info.size = sizeof(TileRasterWork) * Limits::MaxStaticRasterizationStates * Limits::MaxTileInstances;
+		info.size = sizeof(TileRasterWork) * Limits::MaxStaticRasterizationStates * caps.max_num_tile_instances;
 		tile_work_list = device->create_buffer(info);
 		device->set_name(*tile_work_list, "tile-work-list");
 
 		info.size = sizeof(uint32_t) *
-		            Limits::MaxTileInstances *
+		            caps.max_num_tile_instances *
 		            ImplementationConstants::TileWidth *
 		            ImplementationConstants::TileHeight;
 		per_tile_shaded_color = device->create_buffer(info);
@@ -286,7 +295,7 @@ void Renderer::init_buffers(const RendererOptions &options)
 		device->set_name(*per_tile_shaded_depth, "per-tile-shaded-depth");
 
 		info.size = sizeof(uint8_t) *
-		            Limits::MaxTileInstances *
+		            caps.max_num_tile_instances *
 		            ImplementationConstants::TileWidth *
 		            ImplementationConstants::TileHeight;
 		per_tile_shaded_coverage = device->create_buffer(info);
@@ -906,15 +915,17 @@ DerivedSetup Renderer::build_derived_attributes(const AttributeSetup &attr) cons
 
 static constexpr unsigned SUBPIXELS_Y = 4;
 
-static std::pair<int, int> interpolate_x(const TriangleSetup &setup, int y, bool flip)
+static std::pair<int, int> interpolate_x(const TriangleSetup &setup, int y, bool flip, int scaling)
 {
 	int yh_interpolation_base = setup.yh & ~(SUBPIXELS_Y - 1);
 	int ym_interpolation_base = setup.ym;
+	yh_interpolation_base *= scaling;
+	ym_interpolation_base *= scaling;
 
-	int xh = setup.xh + (y - yh_interpolation_base) * setup.dxhdy;
-	int xm = setup.xm + (y - yh_interpolation_base) * setup.dxmdy;
-	int xl = setup.xl + (y - ym_interpolation_base) * setup.dxldy;
-	if (y < setup.ym)
+	int xh = scaling * setup.xh + (y - yh_interpolation_base) * setup.dxhdy;
+	int xm = scaling * setup.xm + (y - yh_interpolation_base) * setup.dxmdy;
+	int xl = scaling * setup.xl + (y - ym_interpolation_base) * setup.dxldy;
+	if (y < scaling * setup.ym)
 		xl = xm;
 
 	int xh_shifted = xh >> 16;
@@ -940,11 +951,14 @@ unsigned Renderer::compute_conservative_max_num_tiles(const TriangleSetup &setup
 	if (setup.yl <= setup.yh)
 		return 0;
 
+	int scaling = int(caps.upscaling);
 	int start_y = setup.yh & ~(SUBPIXELS_Y - 1);
 	int end_y = (setup.yl - 1) | (SUBPIXELS_Y - 1);
 
 	start_y = std::max(int(stream.scissor_state.ylo), start_y);
 	end_y = std::min(int(stream.scissor_state.yhi) - 1, end_y);
+	start_y *= scaling;
+	end_y *= scaling;
 
 	// Y is clipped out, exit early.
 	if (end_y < start_y)
@@ -952,21 +966,23 @@ unsigned Renderer::compute_conservative_max_num_tiles(const TriangleSetup &setup
 
 	bool flip = (setup.flags & TRIANGLE_SETUP_FLIP_BIT) != 0;
 
-	auto upper = interpolate_x(setup, start_y, flip);
-	auto lower = interpolate_x(setup, end_y, flip);
+	auto upper = interpolate_x(setup, start_y, flip, scaling);
+	auto lower = interpolate_x(setup, end_y, flip, scaling);
 	auto mid = upper;
 	auto mid1 = upper;
-	if (setup.ym > start_y && setup.ym < end_y)
+
+	int ym = scaling * setup.ym;
+	if (ym > start_y && ym < end_y)
 	{
-		mid = interpolate_x(setup, setup.ym, flip);
-		mid1 = interpolate_x(setup, setup.ym - 1, flip);
+		mid = interpolate_x(setup, ym, flip, scaling);
+		mid1 = interpolate_x(setup, ym - 1, flip, scaling);
 	}
 
 	int start_x = std::min(std::min(upper.first, lower.first), std::min(mid.first, mid1.first));
 	int end_x = std::max(std::max(upper.second, lower.second), std::max(mid.second, mid1.second));
 
-	start_x = std::max(start_x, int(stream.scissor_state.xlo) >> 2);
-	end_x = std::min(end_x, ((int(stream.scissor_state.xhi) + 3) >> 2) - 1);
+	start_x = std::max(start_x, scaling * (int(stream.scissor_state.xlo) >> 2));
+	end_x = std::min(end_x, scaling * ((int(stream.scissor_state.xhi) + 3) >> 2) - 1);
 
 	if (end_x < start_x)
 		return 0;
@@ -1431,7 +1447,7 @@ bool Renderer::need_flush() const
 	bool span_info_full =
 			(stream.span_info_jobs.size() * ImplementationConstants::DefaultWorkgroupSize + Limits::MaxHeight > Limits::MaxSpanSetups);
 	bool max_shaded_tiles =
-			(stream.max_shaded_tiles + ImplementationConstants::MaxTilesX * ImplementationConstants::MaxTilesY > Limits::MaxTileInstances);
+			(stream.max_shaded_tiles + caps.max_tiles_x * caps.max_tiles_y > caps.max_num_tile_instances);
 
 #ifdef VULKAN_DEBUG
 	if (cache_full)
@@ -1644,8 +1660,8 @@ void Renderer::submit_rasterization(Vulkan::CommandBuffer &cmd, Vulkan::Buffer &
 	for (size_t i = 0; i < stream.static_raster_state_cache.size(); i++)
 	{
 		cmd.set_storage_buffer(1, 0, *tile_work_list,
-		                       i * sizeof(TileRasterWork) * Limits::MaxTileInstances,
-		                       sizeof(TileRasterWork) * Limits::MaxTileInstances);
+		                       i * sizeof(TileRasterWork) * caps.max_num_tile_instances,
+		                       sizeof(TileRasterWork) * caps.max_num_tile_instances);
 
 		auto &state = stream.static_raster_state_cache.data()[i];
 		cmd.set_specialization_constant(2, state.flags | RASTERIZATION_USE_SPECIALIZATION_CONSTANT_BIT);
@@ -1701,8 +1717,8 @@ void Renderer::submit_tile_binning_combined(Vulkan::CommandBuffer &cmd, bool ups
 	cmd.set_specialization_constant(1, ImplementationConstants::TileWidth);
 	cmd.set_specialization_constant(2, ImplementationConstants::TileHeight);
 	cmd.set_specialization_constant(3, Limits::MaxPrimitives);
-	cmd.set_specialization_constant(4, (upscale ? caps.upscaling : 1u) * Limits::MaxWidth);
-	cmd.set_specialization_constant(5, Limits::MaxTileInstances);
+	cmd.set_specialization_constant(4, upscale ? caps.max_width : Limits::MaxWidth);
+	cmd.set_specialization_constant(5, caps.max_num_tile_instances);
 	cmd.set_specialization_constant(6, upscale ? caps.upscaling : 1u);
 
 	struct PushData
@@ -1858,7 +1874,7 @@ void Renderer::submit_depth_blend(Vulkan::CommandBuffer &cmd, Vulkan::Buffer &tm
 	cmd.set_specialization_constant(3, ImplementationConstants::TileWidth);
 	cmd.set_specialization_constant(4, ImplementationConstants::TileHeight);
 	cmd.set_specialization_constant(5, Limits::MaxPrimitives);
-	cmd.set_specialization_constant(6, Limits::MaxWidth);
+	cmd.set_specialization_constant(6, upscaled ? caps.max_width : Limits::MaxWidth);
 	cmd.set_specialization_constant(7, uint32_t(!is_host_coherent));
 
 	cmd.set_storage_buffer(0, 0, *rdram, rdram_offset, rdram_size * (is_host_coherent ? 1 : 2));
