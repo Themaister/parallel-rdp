@@ -65,12 +65,17 @@ struct LoadTileInfo
 
 class CommandProcessor;
 
+struct RendererOptions
+{
+	unsigned upscaling_factor = 1;
+};
+
 class Renderer : public Vulkan::DebugChannelInterface
 {
 public:
 	explicit Renderer(CommandProcessor &processor);
 	~Renderer();
-	bool set_device(Vulkan::Device *device);
+	void set_device(Vulkan::Device *device);
 
 	// If coherent is false, RDRAM is a buffer split into data in lower half and writemask state in upper half, each part being size large.
 	// offset must be 0 in this case.
@@ -79,7 +84,7 @@ public:
 	void set_tmem(Vulkan::Buffer *buffer);
 	void set_shader_bank(const ShaderBank *bank);
 
-	bool init_internal_upscaling_factor(unsigned factor);
+	bool init_renderer(const RendererOptions &options);
 
 	void draw_flat_primitive(const TriangleSetup &setup);
 	void draw_shaded_primitive(const TriangleSetup &setup, const AttributeSetup &attr);
@@ -147,7 +152,8 @@ private:
 
 	bool init_caps();
 	void init_blender_lut();
-	void init_buffers();
+	void init_buffers(const RendererOptions &options);
+	bool init_internal_upscaling_factor(const RendererOptions &options);
 
 	struct
 	{
@@ -285,11 +291,12 @@ private:
 	void maintain_queues();
 	void maintain_queues_idle();
 	void update_tmem_instances(Vulkan::CommandBuffer &cmd);
-	void submit_span_setup_jobs(Vulkan::CommandBuffer &cmd);
+	void submit_span_setup_jobs(Vulkan::CommandBuffer &cmd, bool upscaled);
 	void update_deduced_height(const TriangleSetup &setup);
-	void submit_tile_binning_combined(Vulkan::CommandBuffer &cmd);
+	void submit_tile_binning_combined(Vulkan::CommandBuffer &cmd, bool upscaled);
 	void clear_indirect_buffer(Vulkan::CommandBuffer &cmd);
-	void submit_rasterization(Vulkan::CommandBuffer &cmd, Vulkan::Buffer &tmem);
+	void submit_rasterization(Vulkan::CommandBuffer &cmd, Vulkan::Buffer &tmem, bool upscaled);
+	void submit_depth_blend(Vulkan::CommandBuffer &cmd, Vulkan::Buffer &tmem, bool upscaled);
 
 	enum class ResolveStage { Pre, Post };
 	void submit_update_upscaled_domain(Vulkan::CommandBuffer &cmd, ResolveStage stage);

@@ -50,10 +50,8 @@ void Renderer::set_shader_bank(const ShaderBank *bank)
 	shader_bank = bank;
 }
 
-bool Renderer::set_device(Vulkan::Device *device_)
+bool Renderer::init_renderer(const RendererOptions &options)
 {
-	device = device_;
-
 #ifdef PARALLEL_RDP_SHADER_DIR
 	pipeline_worker.reset(new WorkerThread<Vulkan::DeferredPipelineCompile, PipelineExecutor>(
 			Granite::Global::create_thread_context(), { device }));
@@ -90,7 +88,7 @@ bool Renderer::set_device(Vulkan::Device *device_)
 
 	{
 		Vulkan::BufferCreateInfo info = {};
-		info.size = Limits::MaxSpanSetups * sizeof(SpanSetup);
+		info.size = options.upscaling_factor * Limits::MaxSpanSetups * sizeof(SpanSetup);
 		info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
 		info.domain = Vulkan::BufferDomain::Device;
 		info.misc = Vulkan::BUFFER_MISC_ZERO_INITIALIZE_BIT;
@@ -99,8 +97,15 @@ bool Renderer::set_device(Vulkan::Device *device_)
 	}
 
 	init_blender_lut();
-	init_buffers();
+	init_buffers(options);
+	if (options.upscaling_factor > 1 && !init_internal_upscaling_factor(options))
+		return false;
 	return init_caps();
+}
+
+void Renderer::set_device(Vulkan::Device *device_)
+{
+	device = device_;
 }
 
 bool Renderer::init_caps()
@@ -232,7 +237,7 @@ int Renderer::resolve_shader_define(const char *name, const char *define) const
 		return 0;
 }
 
-void Renderer::init_buffers()
+void Renderer::init_buffers(const RendererOptions &options)
 {
 	Vulkan::BufferCreateInfo info = {};
 	info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
@@ -244,15 +249,15 @@ void Renderer::init_buffers()
 
 	info.size = sizeof(uint32_t) *
 	            (Limits::MaxPrimitives / 32) *
-	            (Limits::MaxWidth / ImplementationConstants::TileWidth) *
-	            (Limits::MaxHeight / ImplementationConstants::TileHeight);
+	            options.upscaling_factor * (Limits::MaxWidth / ImplementationConstants::TileWidth) *
+	            options.upscaling_factor * (Limits::MaxHeight / ImplementationConstants::TileHeight);
 
 	tile_binning_buffer = device->create_buffer(info);
 	device->set_name(*tile_binning_buffer, "tile-binning-buffer");
 
 	info.size = sizeof(uint32_t) *
-	            (Limits::MaxWidth / ImplementationConstants::TileWidth) *
-	            (Limits::MaxHeight / ImplementationConstants::TileHeight);
+	            options.upscaling_factor * (Limits::MaxWidth / ImplementationConstants::TileWidth) *
+	            options.upscaling_factor * (Limits::MaxHeight / ImplementationConstants::TileHeight);
 
 	tile_binning_buffer_coarse = device->create_buffer(info);
 	device->set_name(*tile_binning_buffer_coarse, "tile-binning-buffer-coarse");
@@ -261,8 +266,8 @@ void Renderer::init_buffers()
 	{
 		info.size = sizeof(uint32_t) *
 		            (Limits::MaxPrimitives / 32) *
-		            (Limits::MaxWidth / ImplementationConstants::TileWidth) *
-		            (Limits::MaxHeight / ImplementationConstants::TileHeight);
+		            options.upscaling_factor * (Limits::MaxWidth / ImplementationConstants::TileWidth) *
+		            options.upscaling_factor * (Limits::MaxHeight / ImplementationConstants::TileHeight);
 
 		per_tile_offsets = device->create_buffer(info);
 		device->set_name(*per_tile_offsets, "per-tile-offsets");
@@ -505,8 +510,9 @@ void Renderer::RenderBuffersUpdater::init(Vulkan::Device &device)
 	cpu.init(device, Vulkan::BufferDomain::Host, &gpu);
 }
 
-bool Renderer::init_internal_upscaling_factor(unsigned factor)
+bool Renderer::init_internal_upscaling_factor(const RendererOptions &options)
 {
+	unsigned factor = options.upscaling_factor;
 	if (!device || !rdram || !hidden_rdram)
 	{
 		LOGE("Renderer is not initialized.\n");
@@ -1517,7 +1523,7 @@ void Renderer::update_tmem_instances(Vulkan::CommandBuffer &cmd)
 	}
 }
 
-void Renderer::submit_span_setup_jobs(Vulkan::CommandBuffer &cmd)
+void Renderer::submit_span_setup_jobs(Vulkan::CommandBuffer &cmd, bool upscale)
 {
 	cmd.begin_region("span-setup");
 	auto &instance = buffer_instances[buffer_instance];
@@ -1533,8 +1539,9 @@ void Renderer::submit_span_setup_jobs(Vulkan::CommandBuffer &cmd)
 #endif
 
 	cmd.set_buffer_view(1, 0, *instance.gpu.span_info_jobs_view);
-	cmd.set_specialization_constant_mask(1);
-	cmd.set_specialization_constant(0, ImplementationConstants::DefaultWorkgroupSize);
+	cmd.set_specialization_constant_mask(3);
+	cmd.set_specialization_constant(0, (upscale ? caps.upscaling : 1) * ImplementationConstants::DefaultWorkgroupSize);
+	cmd.set_specialization_constant(1, upscale ? caps.upscaling : 1u);
 
 	Vulkan::QueryPoolHandle begin_ts, end_ts;
 	if (caps.timestamp >= 2)
@@ -1567,7 +1574,7 @@ void Renderer::clear_indirect_buffer(Vulkan::CommandBuffer &cmd)
 	cmd.end_region();
 }
 
-void Renderer::submit_rasterization(Vulkan::CommandBuffer &cmd, Vulkan::Buffer &tmem)
+void Renderer::submit_rasterization(Vulkan::CommandBuffer &cmd, Vulkan::Buffer &tmem, bool upscale)
 {
 	cmd.begin_region("rasterization");
 	auto &instance = buffer_instances[buffer_instance];
@@ -1673,7 +1680,7 @@ void Renderer::submit_rasterization(Vulkan::CommandBuffer &cmd, Vulkan::Buffer &
 	cmd.end_region();
 }
 
-void Renderer::submit_tile_binning_combined(Vulkan::CommandBuffer &cmd)
+void Renderer::submit_tile_binning_combined(Vulkan::CommandBuffer &cmd, bool upscale)
 {
 	cmd.begin_region("tile-binning-combined");
 	auto &instance = buffer_instances[buffer_instance];
@@ -1831,6 +1838,130 @@ void Renderer::submit_update_upscaled_domain(Vulkan::CommandBuffer &cmd, Resolve
 	cmd.dispatch(num_workgroups, 1, 1);
 }
 
+void Renderer::submit_depth_blend(Vulkan::CommandBuffer &cmd, Vulkan::Buffer &tmem, bool upscaled)
+{
+	cmd.begin_region("render-pass");
+	auto &instance = buffer_instances[buffer_instance];
+
+	cmd.set_specialization_constant_mask(0xff);
+	cmd.set_specialization_constant(0, uint32_t(rdram_size));
+	cmd.set_specialization_constant(1, uint32_t(fb.fmt));
+	cmd.set_specialization_constant(2, int(fb.addr == fb.depth_addr));
+	cmd.set_specialization_constant(3, ImplementationConstants::TileWidth);
+	cmd.set_specialization_constant(4, ImplementationConstants::TileHeight);
+	cmd.set_specialization_constant(5, Limits::MaxPrimitives);
+	cmd.set_specialization_constant(6, Limits::MaxWidth);
+	cmd.set_specialization_constant(7, uint32_t(!is_host_coherent));
+
+	cmd.set_storage_buffer(0, 0, *rdram, rdram_offset, rdram_size * (is_host_coherent ? 1 : 2));
+	cmd.set_storage_buffer(0, 1, *hidden_rdram);
+	cmd.set_storage_buffer(0, 2, tmem);
+
+	if (!caps.ubershader)
+	{
+		cmd.set_storage_buffer(0, 3, *per_tile_shaded_color);
+		cmd.set_storage_buffer(0, 4, *per_tile_shaded_depth);
+		cmd.set_storage_buffer(0, 5, *per_tile_shaded_shaded_alpha);
+		cmd.set_storage_buffer(0, 6, *per_tile_shaded_coverage);
+		cmd.set_storage_buffer(0, 7, *per_tile_offsets);
+	}
+
+	cmd.set_storage_buffer(1, 0, *instance.gpu.triangle_setup.buffer);
+	cmd.set_storage_buffer(1, 1, *instance.gpu.attribute_setup.buffer);
+	cmd.set_storage_buffer(1, 2, *instance.gpu.derived_setup.buffer);
+	cmd.set_storage_buffer(1, 3, *instance.gpu.scissor_setup.buffer);
+	cmd.set_storage_buffer(1, 4, *instance.gpu.static_raster_state.buffer);
+	cmd.set_storage_buffer(1, 5, *instance.gpu.depth_blend_state.buffer);
+	cmd.set_storage_buffer(1, 6, *instance.gpu.state_indices.buffer);
+	cmd.set_storage_buffer(1, 7, *instance.gpu.tile_info_state.buffer);
+	cmd.set_storage_buffer(1, 8, *span_setups);
+	cmd.set_storage_buffer(1, 9, *instance.gpu.span_info_offsets.buffer);
+	cmd.set_buffer_view(1, 10, *blender_divider_buffer);
+	cmd.set_storage_buffer(1, 11, *tile_binning_buffer);
+	cmd.set_storage_buffer(1, 12, *tile_binning_buffer_coarse);
+
+	auto *global_fb_info = cmd.allocate_typed_constant_data<GlobalFBInfo>(2, 0, 1);
+
+	GlobalState push = {};
+	push.fb_width = fb.width;
+	push.fb_height = fb.deduced_height;
+	switch (fb.fmt)
+	{
+	case FBFormat::I4:
+		push.addr_index = fb.addr;
+		global_fb_info->fb_size = 0;
+		global_fb_info->dx_mask = 0;
+		global_fb_info->dx_shift = 0;
+		break;
+
+	case FBFormat::I8:
+		push.addr_index = fb.addr;
+		global_fb_info->fb_size = 1;
+		global_fb_info->dx_mask = ~7u;
+		global_fb_info->dx_shift = 3;
+		break;
+
+	case FBFormat::RGBA5551:
+	case FBFormat::IA88:
+		push.addr_index = fb.addr >> 1u;
+		global_fb_info->fb_size = 2;
+		global_fb_info->dx_mask = ~3u;
+		global_fb_info->dx_shift = 2;
+		break;
+
+	case FBFormat::RGBA8888:
+		push.addr_index = fb.addr >> 2u;
+		global_fb_info->fb_size = 4;
+		global_fb_info->dx_mask = ~1u;
+		global_fb_info->dx_shift = 1;
+		break;
+	}
+
+	global_fb_info->base_primitive_index = base_primitive_index;
+
+	push.depth_addr_index = fb.depth_addr >> 1;
+	unsigned num_primitives_32 = (stream.triangle_setup.size() + 31) / 32;
+	push.group_mask = (1u << num_primitives_32) - 1;
+	cmd.push_constants(&push, 0, sizeof(push));
+
+	if (caps.ubershader)
+	{
+#ifdef PARALLEL_RDP_SHADER_DIR
+		cmd.set_program("rdp://ubershader.comp", {
+				{ "DEBUG_ENABLE", debug_channel ? 1 : 0 },
+				{ "SMALL_TYPES", caps.supports_small_integer_arithmetic ? 1 : 0 },
+		});
+#else
+		cmd.set_program(shader_bank->ubershader);
+#endif
+	}
+	else
+	{
+#ifdef PARALLEL_RDP_SHADER_DIR
+		cmd.set_program("rdp://depth_blend.comp", {
+				{ "DEBUG_ENABLE", debug_channel ? 1 : 0 },
+				{ "SMALL_TYPES", caps.supports_small_integer_arithmetic ? 1 : 0 },
+		});
+#else
+		cmd.set_program(shader_bank->depth_blend);
+#endif
+	}
+
+	Vulkan::QueryPoolHandle start_ts, end_ts;
+	if (caps.timestamp >= 2)
+		start_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+
+	cmd.dispatch((push.fb_width + 7) / 8, (push.fb_height + 7) / 8, 1);
+
+	if (caps.timestamp >= 2)
+	{
+		end_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+		device->register_time_interval("RDP GPU", std::move(start_ts), std::move(end_ts), "depth-blending");
+	}
+
+	cmd.end_region();
+}
+
 void Renderer::submit_render_pass(Vulkan::CommandBuffer &cmd)
 {
 	bool need_render_pass = fb.width != 0 && fb.deduced_height != 0 && !stream.span_info_jobs.empty();
@@ -1850,8 +1981,8 @@ void Renderer::submit_render_pass(Vulkan::CommandBuffer &cmd)
 	// pass should dominate here unless the workload is trivial.
 	if (need_render_pass)
 	{
-		submit_span_setup_jobs(cmd);
-		submit_tile_binning_combined(cmd);
+		submit_span_setup_jobs(cmd, false);
+		submit_tile_binning_combined(cmd, false);
 		if (caps.upscaling > 1)
 			submit_update_upscaled_domain(cmd, ResolveStage::Pre);
 	}
@@ -1868,136 +1999,13 @@ void Renderer::submit_render_pass(Vulkan::CommandBuffer &cmd)
 
 	if (need_render_pass && !caps.ubershader)
 	{
-		submit_rasterization(cmd, need_tmem_upload ? *tmem_instances : *tmem);
+		submit_rasterization(cmd, need_tmem_upload ? *tmem_instances : *tmem, false);
 		cmd.barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
 		            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
 	}
 
 	if (need_render_pass)
-	{
-		cmd.begin_region("render-pass");
-		auto &instance = buffer_instances[buffer_instance];
-
-		cmd.set_specialization_constant_mask(0xff);
-		cmd.set_specialization_constant(0, uint32_t(rdram_size));
-		cmd.set_specialization_constant(1, uint32_t(fb.fmt));
-		cmd.set_specialization_constant(2, int(fb.addr == fb.depth_addr));
-		cmd.set_specialization_constant(3, ImplementationConstants::TileWidth);
-		cmd.set_specialization_constant(4, ImplementationConstants::TileHeight);
-		cmd.set_specialization_constant(5, Limits::MaxPrimitives);
-		cmd.set_specialization_constant(6, Limits::MaxWidth);
-		cmd.set_specialization_constant(7, uint32_t(!is_host_coherent));
-
-		cmd.set_storage_buffer(0, 0, *rdram, rdram_offset, rdram_size * (is_host_coherent ? 1 : 2));
-		cmd.set_storage_buffer(0, 1, *hidden_rdram);
-		cmd.set_storage_buffer(0, 2, need_tmem_upload ? *tmem_instances : *tmem);
-
-		if (!caps.ubershader)
-		{
-			cmd.set_storage_buffer(0, 3, *per_tile_shaded_color);
-			cmd.set_storage_buffer(0, 4, *per_tile_shaded_depth);
-			cmd.set_storage_buffer(0, 5, *per_tile_shaded_shaded_alpha);
-			cmd.set_storage_buffer(0, 6, *per_tile_shaded_coverage);
-			cmd.set_storage_buffer(0, 7, *per_tile_offsets);
-		}
-
-		cmd.set_storage_buffer(1, 0, *instance.gpu.triangle_setup.buffer);
-		cmd.set_storage_buffer(1, 1, *instance.gpu.attribute_setup.buffer);
-		cmd.set_storage_buffer(1, 2, *instance.gpu.derived_setup.buffer);
-		cmd.set_storage_buffer(1, 3, *instance.gpu.scissor_setup.buffer);
-		cmd.set_storage_buffer(1, 4, *instance.gpu.static_raster_state.buffer);
-		cmd.set_storage_buffer(1, 5, *instance.gpu.depth_blend_state.buffer);
-		cmd.set_storage_buffer(1, 6, *instance.gpu.state_indices.buffer);
-		cmd.set_storage_buffer(1, 7, *instance.gpu.tile_info_state.buffer);
-		cmd.set_storage_buffer(1, 8, *span_setups);
-		cmd.set_storage_buffer(1, 9, *instance.gpu.span_info_offsets.buffer);
-		cmd.set_buffer_view(1, 10, *blender_divider_buffer);
-		cmd.set_storage_buffer(1, 11, *tile_binning_buffer);
-		cmd.set_storage_buffer(1, 12, *tile_binning_buffer_coarse);
-
-		auto *global_fb_info = cmd.allocate_typed_constant_data<GlobalFBInfo>(2, 0, 1);
-
-		GlobalState push = {};
-		push.fb_width = fb.width;
-		push.fb_height = fb.deduced_height;
-		switch (fb.fmt)
-		{
-		case FBFormat::I4:
-			push.addr_index = fb.addr;
-			global_fb_info->fb_size = 0;
-			global_fb_info->dx_mask = 0;
-			global_fb_info->dx_shift = 0;
-			break;
-
-		case FBFormat::I8:
-			push.addr_index = fb.addr;
-			global_fb_info->fb_size = 1;
-			global_fb_info->dx_mask = ~7u;
-			global_fb_info->dx_shift = 3;
-			break;
-
-		case FBFormat::RGBA5551:
-		case FBFormat::IA88:
-			push.addr_index = fb.addr >> 1u;
-			global_fb_info->fb_size = 2;
-			global_fb_info->dx_mask = ~3u;
-			global_fb_info->dx_shift = 2;
-			break;
-
-		case FBFormat::RGBA8888:
-			push.addr_index = fb.addr >> 2u;
-			global_fb_info->fb_size = 4;
-			global_fb_info->dx_mask = ~1u;
-			global_fb_info->dx_shift = 1;
-			break;
-		}
-
-		global_fb_info->base_primitive_index = base_primitive_index;
-
-		push.depth_addr_index = fb.depth_addr >> 1;
-		unsigned num_primitives_32 = (stream.triangle_setup.size() + 31) / 32;
-		push.group_mask = (1u << num_primitives_32) - 1;
-		cmd.push_constants(&push, 0, sizeof(push));
-
-		if (caps.ubershader)
-		{
-#ifdef PARALLEL_RDP_SHADER_DIR
-			cmd.set_program("rdp://ubershader.comp", {
-				{ "DEBUG_ENABLE", debug_channel ? 1 : 0 },
-				{ "SMALL_TYPES", caps.supports_small_integer_arithmetic ? 1 : 0 },
-			});
-#else
-			cmd.set_program(shader_bank->ubershader);
-#endif
-		}
-		else
-		{
-#ifdef PARALLEL_RDP_SHADER_DIR
-			cmd.set_program("rdp://depth_blend.comp", {
-				{ "DEBUG_ENABLE", debug_channel ? 1 : 0 },
-				{ "SMALL_TYPES", caps.supports_small_integer_arithmetic ? 1 : 0 },
-			});
-#else
-			cmd.set_program(shader_bank->depth_blend);
-#endif
-		}
-
-		Vulkan::QueryPoolHandle start_ts, end_ts;
-		if (caps.timestamp >= 2)
-			start_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-
-		cmd.dispatch((push.fb_width + 7) / 8, (push.fb_height + 7) / 8, 1);
-
-		if (caps.timestamp >= 2)
-		{
-			end_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-			device->register_time_interval("RDP GPU", std::move(start_ts), std::move(end_ts), "depth-blending");
-		}
-
-		cmd.end_region();
-
-		base_primitive_index += uint32_t(stream.triangle_setup.size());
-	}
+		submit_depth_blend(cmd, need_tmem_upload ? *tmem_instances : *tmem, false);
 
 	if (caps.timestamp >= 1)
 	{
@@ -2008,29 +2016,46 @@ void Renderer::submit_render_pass(Vulkan::CommandBuffer &cmd)
 		device->register_time_interval("RDP GPU", std::move(render_pass_start), std::move(render_pass_end), "render-pass", std::move(tag));
 	}
 
+	clear_indirect_buffer(cmd);
+
 	// TODO: If upscaling, we should flush submit here so we don't wait on irrelevant work happening on GPU in sync mode.
 
-	if (caps.upscaling > 1)
+	if (caps.upscaling > 1 && need_render_pass)
 	{
+		// Now, do the render pass upscaled.
 		cmd.barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
 		            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
 		            VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
 
-		// TODO: Could probably do this in the render pass itself, just write output to two buffers ...
-		// This is more composable for now.
+		// TODO: Could probably do this reference update in the render pass itself,
+		// just write output to two buffers ... This is more composable for now.
 		submit_update_upscaled_domain(cmd, ResolveStage::Post);
 
-		// TODO: Submit upscaled shading work.
+		submit_span_setup_jobs(cmd, true);
+		submit_tile_binning_combined(cmd, true);
 
 		cmd.barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
-		            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-		            VK_ACCESS_SHADER_READ_BIT);
+		            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
+		            (!caps.ubershader ? VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT : 0),
+		            VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT |
+		            (!caps.ubershader ? VK_ACCESS_INDIRECT_COMMAND_READ_BIT : 0));
 
-		// TODO: Submit memory interfacing pass for upscaled domain here.
+		if (!caps.ubershader)
+		{
+			submit_rasterization(cmd, need_tmem_upload ? *tmem_instances : *tmem, true);
+			cmd.barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+			            VK_ACCESS_SHADER_WRITE_BIT,
+			            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+			            VK_ACCESS_SHADER_READ_BIT);
+		}
+
+		submit_depth_blend(cmd, need_tmem_upload ? *tmem_instances : *tmem, true);
+		if (!caps.ubershader)
+			clear_indirect_buffer(cmd);
 	}
 
-	if (need_render_pass && !caps.ubershader)
-		clear_indirect_buffer(cmd);
+	if (need_render_pass)
+		base_primitive_index += uint32_t(stream.triangle_setup.size());
 
 	cmd.barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
 	            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,

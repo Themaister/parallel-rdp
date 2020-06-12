@@ -160,17 +160,19 @@ void CommandProcessor::init_renderer()
 		return;
 	}
 
-	is_supported = renderer.set_device(&device);
+	renderer.set_device(&device);
 	renderer.set_rdram(rdram.get(), host_rdram, rdram_offset, rdram_size, is_host_coherent);
 	renderer.set_hidden_rdram(hidden_rdram.get());
 	renderer.set_tmem(tmem.get());
 
+	RendererOptions opts;
 	if (const char *env = getenv("PARALLEL_RDP_UPSCALING"))
 	{
 		unsigned factor = strtoul(env, nullptr, 0);
-		if (!renderer.init_internal_upscaling_factor(factor))
-			LOGE("Failed to initialize upscaling.\n");
+		opts.upscaling_factor = factor;
 	}
+
+	is_supported = renderer.init_renderer({});
 
 	vi.set_device(&device);
 	vi.set_rdram(rdram.get(), rdram_offset, rdram_size);
