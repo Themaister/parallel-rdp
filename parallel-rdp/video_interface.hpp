@@ -54,7 +54,7 @@ public:
 
 	int resolve_shader_define(const char *name, const char *define) const;
 
-	Vulkan::ImageHandle scanout(VkImageLayout target_layout, const ScanoutOptions &options = {});
+	Vulkan::ImageHandle scanout(VkImageLayout target_layout, const ScanoutOptions &options = {}, unsigned scale_factor = 1);
 	void scanout_memory_range(unsigned &offset, unsigned &length);
 	void set_shader_bank(const ShaderBank *bank);
 
@@ -86,5 +86,23 @@ private:
 	size_t rdram_offset = 0;
 	size_t rdram_size = 0;
 	bool timestamp = false;
+
+	struct Registers
+	{
+		int x_start, y_start;
+		int h_start, v_start;
+		int h_end, v_end;
+		int h_res, v_res;
+		int x_add, y_add;
+		int v_sync;
+		int vi_width;
+		int vi_offset;
+		int max_x, max_y;
+		int v_current_line;
+		bool left_clamp, right_clamp;
+		bool is_pal;
+		uint32_t status;
+	};
+	Registers decode_vi_registers() const;
 };
 }
