@@ -1880,10 +1880,14 @@ void Renderer::submit_depth_blend(Vulkan::CommandBuffer &cmd, Vulkan::Buffer &tm
 	cmd.set_specialization_constant(4, ImplementationConstants::TileHeight);
 	cmd.set_specialization_constant(5, Limits::MaxPrimitives);
 	cmd.set_specialization_constant(6, upscaled ? caps.max_width : Limits::MaxWidth);
-	cmd.set_specialization_constant(7, uint32_t(!is_host_coherent));
+	cmd.set_specialization_constant(7, uint32_t(!is_host_coherent && !upscaled) |
+	                                   ((upscaled ? trailing_zeroes(caps.upscaling) : 0u) << 1u));
 
-	cmd.set_storage_buffer(0, 0, *rdram, rdram_offset, rdram_size * (is_host_coherent ? 1 : 2));
-	cmd.set_storage_buffer(0, 1, *hidden_rdram);
+	if (upscaled)
+		cmd.set_storage_buffer(0, 0, *upscaling_multisampled_rdram);
+	else
+		cmd.set_storage_buffer(0, 0, *rdram, rdram_offset, rdram_size * (is_host_coherent || upscaled ? 1 : 2));
+	cmd.set_storage_buffer(0, 1, upscaled ? *upscaling_multisampled_hidden_rdram : *hidden_rdram);
 	cmd.set_storage_buffer(0, 2, tmem);
 
 	if (!caps.ubershader)
@@ -1914,6 +1918,13 @@ void Renderer::submit_depth_blend(Vulkan::CommandBuffer &cmd, Vulkan::Buffer &tm
 	GlobalState push = {};
 	push.fb_width = fb.width;
 	push.fb_height = fb.deduced_height;
+
+	if (upscaled)
+	{
+		push.fb_width *= caps.upscaling;
+		push.fb_height *= caps.upscaling;
+	}
+
 	switch (fb.fmt)
 	{
 	case FBFormat::I4:
