@@ -1563,7 +1563,7 @@ void Renderer::submit_span_setup_jobs(Vulkan::CommandBuffer &cmd, bool upscale)
 	cmd.set_buffer_view(1, 0, *instance.gpu.span_info_jobs_view);
 	cmd.set_specialization_constant_mask(3);
 	cmd.set_specialization_constant(0, (upscale ? caps.upscaling : 1) * ImplementationConstants::DefaultWorkgroupSize);
-	cmd.set_specialization_constant(1, upscale ? caps.upscaling : 1u);
+	cmd.set_specialization_constant(1, upscale ? trailing_zeroes(caps.upscaling) : 0u);
 
 	Vulkan::QueryPoolHandle begin_ts, end_ts;
 	if (caps.timestamp >= 2)

@@ -686,7 +686,7 @@ void CommandProcessor::op_fill_rectangle(const uint32_t *words)
 	setup.ym = yl;
 	setup.yl = yl;
 	setup.yh = yh;
-	setup.flags = TRIANGLE_SETUP_FLIP_BIT;
+	setup.flags = TRIANGLE_SETUP_FLIP_BIT | TRIANGLE_SETUP_DISABLE_UPSCALING_BIT;
 
 	renderer.draw_flat_primitive(setup);
 }
@@ -718,7 +718,7 @@ void CommandProcessor::op_texture_rectangle(const uint32_t *words)
 	setup.ym = yl;
 	setup.yl = yl;
 	setup.yh = yh;
-	setup.flags = TRIANGLE_SETUP_FLIP_BIT;
+	setup.flags = TRIANGLE_SETUP_FLIP_BIT | TRIANGLE_SETUP_DISABLE_UPSCALING_BIT;
 	setup.tile = tile;
 
 	attr.s = s << 16;
@@ -760,7 +760,7 @@ void CommandProcessor::op_texture_rectangle_flip(const uint32_t *words)
 	setup.ym = yl;
 	setup.yl = yl;
 	setup.yh = yh;
-	setup.flags = TRIANGLE_SETUP_FLIP_BIT;
+	setup.flags = TRIANGLE_SETUP_FLIP_BIT | TRIANGLE_SETUP_DISABLE_UPSCALING_BIT;
 	setup.tile = tile;
 
 	attr.s = s << 16;
