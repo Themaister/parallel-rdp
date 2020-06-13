@@ -203,7 +203,7 @@ void main()
     span_setup.valid_line = u16(!all(invalid_line) && !all_over && !all_under);
 
     if (interlace_en)
-        if ((y & 1) != int(keep_odd_field))
+        if (((y >> SCALING_LOG2) & 1) != int(keep_odd_field))
             span_setup.valid_line = U16_C(0);
 
     span_setup.lodlength = i16(flip ? (end_x - span_setup.interpolation_base_x) : (span_setup.interpolation_base_x - start_x));
