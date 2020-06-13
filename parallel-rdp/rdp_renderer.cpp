@@ -2066,7 +2066,8 @@ void Renderer::submit_render_pass(Vulkan::CommandBuffer &cmd)
 	if (need_render_pass)
 		submit_depth_blend(cmd, need_tmem_upload ? *tmem_instances : *tmem, false);
 
-	clear_indirect_buffer(cmd);
+	if (!caps.ubershader)
+		clear_indirect_buffer(cmd);
 
 	if (render_pass_is_upscaled())
 	{
