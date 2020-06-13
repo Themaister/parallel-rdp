@@ -284,8 +284,8 @@ Vulkan::ImageHandle VideoInterface::vram_fetch_stage(const Registers &regs, unsi
 	int extract_height = regs.max_y + 1 + 4;
 
 	Vulkan::ImageCreateInfo rt_info = Vulkan::ImageCreateInfo::render_target(
-			extract_width * scaling_factor,
-			extract_height * scaling_factor,
+			extract_width,
+			extract_height,
 			VK_FORMAT_R8G8B8A8_UINT);
 
 	rt_info.usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
@@ -335,8 +335,8 @@ Vulkan::ImageHandle VideoInterface::vram_fetch_stage(const Registers &regs, unsi
 	push.fb_width = regs.vi_width;
 	push.x_offset = divot ? -3 : -2;
 	push.y_offset = -2;
-	push.x_res = extract_width * scaling_factor;
-	push.y_res = extract_height * scaling_factor;
+	push.x_res = extract_width;
+	push.y_res = extract_height;
 
 	async_cmd->set_specialization_constant_mask(7);
 	async_cmd->set_specialization_constant(0, uint32_t(rdram_size));
@@ -344,8 +344,8 @@ Vulkan::ImageHandle VideoInterface::vram_fetch_stage(const Registers &regs, unsi
 	async_cmd->set_specialization_constant(2, trailing_zeroes(scaling_factor));
 
 	async_cmd->push_constants(&push, 0, sizeof(push));
-	async_cmd->dispatch((extract_width * scaling_factor + 15) / 16,
-	                    (extract_height * scaling_factor + 7) / 8,
+	async_cmd->dispatch((extract_width + 15) / 16,
+	                    (extract_height + 7) / 8,
 	                    1);
 
 	// Just enforce an execution barrier here for rendering work in next frame.
@@ -443,8 +443,8 @@ Vulkan::ImageHandle VideoInterface::aa_fetch_stage(Vulkan::CommandBuffer &cmd, V
 		int32_t y_offset;
 	} push = {};
 
-	push.x_offset = 2 * int(scaling_factor);
-	push.y_offset = 2 * int(scaling_factor);
+	push.x_offset = 2;
+	push.y_offset = 2;
 
 	cmd.push_constants(&push, 0, sizeof(push));
 
@@ -873,13 +873,6 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const S
 
 	bool degenerate = regs.h_res <= 0 || regs.v_res <= 0;
 
-	// First we copy data out of VRAM into a texture which we will then perform our post-AA on.
-	// We do this on the async queue so we don't have to stall async queue on graphics work to deal with WAR hazards.
-	// After the copy, we can immediately begin rendering new frames while we do post in parallel.
-	Vulkan::ImageHandle vram_image;
-	if (!degenerate)
-		vram_image = vram_fetch_stage(regs, scaling_factor);
-
 	regs.h_start *= int(scaling_factor);
 	regs.v_start *= int(scaling_factor);
 	regs.h_res *= int(scaling_factor);
@@ -890,6 +883,13 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const S
 	regs.v_end *= int(scaling_factor);
 	regs.max_x = regs.max_x * int(scaling_factor) + int(scaling_factor - 1);
 	regs.max_y = regs.max_y * int(scaling_factor) + int(scaling_factor - 1);
+
+	// First we copy data out of VRAM into a texture which we will then perform our post-AA on.
+	// We do this on the async queue so we don't have to stall async queue on graphics work to deal with WAR hazards.
+	// After the copy, we can immediately begin rendering new frames while we do post in parallel.
+	Vulkan::ImageHandle vram_image;
+	if (!degenerate)
+		vram_image = vram_fetch_stage(regs, scaling_factor);
 
 	auto cmd = device->request_command_buffer();
 
