@@ -985,7 +985,7 @@ Vulkan::ImageHandle CommandProcessor::scanout(const ScanoutOptions &opts)
 		renderer.resolve_coherency_external(offset, length);
 	}
 
-	auto scanout = vi.scanout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, opts);
+	auto scanout = vi.scanout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, opts, renderer.get_scaling_factor());
 	return scanout;
 }
 
