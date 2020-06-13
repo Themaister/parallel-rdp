@@ -528,9 +528,9 @@ bool Renderer::init_internal_upscaling_factor(const RendererOptions &options)
 		return false;
 	}
 
-	if (factor != 1 && factor != 2)
+	if (factor != 1 && factor != 2 && factor != 4)
 	{
-		LOGE("Only 1x (native) and 2x upscaling factors are supported.\n");
+		LOGE("Only 1x (native) 2x, and 4x upscaling factors are supported.\n");
 		return false;
 	}
 
