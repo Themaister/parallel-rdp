@@ -222,7 +222,7 @@ VideoInterface::Registers VideoInterface::decode_vi_registers() const
 	return reg;
 }
 
-void VideoInterface::scanout_memory_range(unsigned &offset, unsigned &length)
+void VideoInterface::scanout_memory_range(unsigned &offset, unsigned &length) const
 {
 	auto reg = decode_vi_registers();
 
@@ -267,7 +267,10 @@ Vulkan::ImageHandle VideoInterface::vram_fetch_stage(const Registers &regs, unsi
 
 	if (scaling_factor > 1)
 	{
-		renderer->submit_update_upscaled_domain_external(*async_cmd);
+		unsigned pixel_size_log2 = ((regs.status & VI_CONTROL_TYPE_MASK) == VI_CONTROL_TYPE_RGBA8888_BIT) ? 2 : 1;
+		unsigned offset, length;
+		scanout_memory_range(offset, length);
+		renderer->submit_update_upscaled_domain_external(*async_cmd, offset, length, pixel_size_log2);
 		async_cmd->barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
 		                   VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
 	}
@@ -374,8 +377,6 @@ Vulkan::ImageHandle VideoInterface::aa_fetch_stage(Vulkan::CommandBuffer &cmd, V
 	// For the AA pass, we need to figure out how many pixels we might need to read.
 	int aa_width = regs.max_x + 3 + int(divot) * 2;
 	int aa_height = regs.max_y + 2;
-	aa_width *= int(scaling_factor);
-	aa_height *= int(scaling_factor);
 
 	Vulkan::ImageCreateInfo rt_info = Vulkan::ImageCreateInfo::render_target(aa_width, aa_height,
 	                                                                         VK_FORMAT_R8G8B8A8_UINT);
@@ -479,8 +480,6 @@ Vulkan::ImageHandle VideoInterface::divot_stage(Vulkan::CommandBuffer &cmd, Vulk
 	// For the divot pass, we need to figure out how many pixels we might need to read.
 	int divot_width = regs.max_x + 2;
 	int divot_height = regs.max_y + 2;
-	divot_width *= int(scaling_factor);
-	divot_height *= int(scaling_factor);
 
 	Vulkan::ImageCreateInfo rt_info = Vulkan::ImageCreateInfo::render_target(divot_width, divot_height,
 	                                                                         VK_FORMAT_R8G8B8A8_UINT);
@@ -883,6 +882,8 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const S
 
 	regs.h_start *= int(scaling_factor);
 	regs.v_start *= int(scaling_factor);
+	regs.h_res *= int(scaling_factor);
+	regs.v_res *= int(scaling_factor);
 	regs.x_start *= int(scaling_factor);
 	regs.y_start *= int(scaling_factor);
 	regs.h_end *= int(scaling_factor);

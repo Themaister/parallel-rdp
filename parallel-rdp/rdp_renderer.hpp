@@ -119,7 +119,8 @@ public:
 	int resolve_shader_define(const char *name, const char *define) const;
 
 	void resolve_coherency_external(unsigned offset, unsigned length);
-	void submit_update_upscaled_domain_external(Vulkan::CommandBuffer &cmd);
+	void submit_update_upscaled_domain_external(Vulkan::CommandBuffer &cmd,
+	                                            unsigned addr, unsigned length, unsigned pixel_size_log2);
 	unsigned get_scaling_factor() const;
 
 	const Vulkan::Buffer *get_upscaled_rdram_buffer() const;
@@ -305,6 +306,8 @@ private:
 
 	enum class ResolveStage { Pre, Post };
 	void submit_update_upscaled_domain(Vulkan::CommandBuffer &cmd, ResolveStage stage);
+	void submit_update_upscaled_domain(Vulkan::CommandBuffer &cmd, ResolveStage stage,
+	                                   unsigned addr, unsigned depth_addr, unsigned length, unsigned pixel_size_log2);
 
 	SpanInfoOffsets allocate_span_jobs(const TriangleSetup &setup);
 

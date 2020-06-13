@@ -541,6 +541,7 @@ bool Renderer::init_internal_upscaling_factor(const RendererOptions &options)
 		upscaling_multisampled_hidden_rdram.reset();
 		upscaling_reference_rdram.reset();
 		upscaling_multisampled_rdram.reset();
+		return true;
 	}
 
 	Vulkan::BufferCreateInfo info;
@@ -552,15 +553,18 @@ bool Renderer::init_internal_upscaling_factor(const RendererOptions &options)
 	upscaling_reference_rdram = device->create_buffer(info);
 	info.size = rdram_size * factor * factor;
 	upscaling_multisampled_rdram = device->create_buffer(info);
+	device->set_name(*upscaling_multisampled_rdram, "multisampled-rdram");
 
 	info.size = hidden_rdram->get_create_info().size * factor * factor;
 	upscaling_multisampled_hidden_rdram = device->create_buffer(info);
+	device->set_name(*upscaling_multisampled_hidden_rdram, "multisampled-hidden-rdram");
 
 	{
 		auto cmd = device->request_command_buffer();
 		cmd->fill_buffer(*upscaling_multisampled_hidden_rdram, 0x03030303);
 		cmd->barrier(VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
-		             VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_MEMORY_READ_BIT);
+		             VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+		             VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT);
 		device->submit(cmd);
 	}
 
@@ -1806,12 +1810,15 @@ void Renderer::submit_tile_binning_combined(Vulkan::CommandBuffer &cmd, bool ups
 	cmd.end_region();
 }
 
-void Renderer::submit_update_upscaled_domain_external(Vulkan::CommandBuffer &cmd)
+void Renderer::submit_update_upscaled_domain_external(Vulkan::CommandBuffer &cmd,
+                                                      unsigned addr, unsigned length, unsigned pixel_size_log2)
 {
-	submit_update_upscaled_domain(cmd, ResolveStage::Pre);
+	submit_update_upscaled_domain(cmd, ResolveStage::Pre, addr, addr, length, pixel_size_log2);
 }
 
-void Renderer::submit_update_upscaled_domain(Vulkan::CommandBuffer &cmd, ResolveStage stage)
+void Renderer::submit_update_upscaled_domain(Vulkan::CommandBuffer &cmd, ResolveStage stage,
+                                             unsigned addr, unsigned depth_addr,
+                                             unsigned num_pixels, unsigned pixel_size_log2)
 {
 #ifdef PARALLEL_RDP_SHADER_DIR
 	if (stage == ResolveStage::Pre)
@@ -1833,12 +1840,10 @@ void Renderer::submit_update_upscaled_domain(Vulkan::CommandBuffer &cmd, Resolve
 
 	cmd.set_specialization_constant_mask(0x1f);
 	cmd.set_specialization_constant(0, uint32_t(rdram_size));
-	cmd.set_specialization_constant(1, uint32_t(fb.fmt));
-	cmd.set_specialization_constant(2, int(fb.addr == fb.depth_addr));
+	cmd.set_specialization_constant(1, pixel_size_log2);
+	cmd.set_specialization_constant(2, int(addr == depth_addr));
 	cmd.set_specialization_constant(3, ImplementationConstants::DefaultWorkgroupSize);
 	cmd.set_specialization_constant(4, caps.upscaling * caps.upscaling);
-
-	unsigned num_pixels = fb.width * fb.deduced_height;
 
 	unsigned num_workgroups =
 			(num_pixels + ImplementationConstants::DefaultWorkgroupSize - 1) /
@@ -1850,26 +1855,35 @@ void Renderer::submit_update_upscaled_domain(Vulkan::CommandBuffer &cmd, Resolve
 		uint32_t fb_addr, fb_depth_addr;
 	} push = {};
 	push.pixels = num_pixels;
-	push.fb_addr = fb.addr;
-	push.fb_depth_addr = fb.depth_addr >> 1;
+	push.fb_addr = addr >> pixel_size_log2;
+	push.fb_depth_addr = depth_addr >> 1;
+
+	cmd.push_constants(&push, 0, sizeof(push));
+	cmd.dispatch(num_workgroups, 1, 1);
+}
+
+void Renderer::submit_update_upscaled_domain(Vulkan::CommandBuffer &cmd, ResolveStage stage)
+{
+	unsigned num_pixels = fb.width * fb.deduced_height;
+	unsigned pixel_size_log2;
 
 	switch (fb.fmt)
 	{
 	case FBFormat::RGBA8888:
-		push.fb_addr >>= 2;
+		pixel_size_log2 = 2;
 		break;
 
 	case FBFormat::RGBA5551:
 	case FBFormat::IA88:
-		push.fb_addr >>= 1;
+		pixel_size_log2 = 1;
 		break;
 
 	default:
+		pixel_size_log2 = 0;
 		break;
 	}
 
-	cmd.push_constants(&push, 0, sizeof(push));
-	cmd.dispatch(num_workgroups, 1, 1);
+	submit_update_upscaled_domain(cmd, stage, fb.addr, fb.depth_addr, num_pixels, pixel_size_log2);
 }
 
 void Renderer::submit_depth_blend(Vulkan::CommandBuffer &cmd, Vulkan::Buffer &tmem, bool upscaled)
@@ -2072,6 +2086,7 @@ void Renderer::submit_render_pass(Vulkan::CommandBuffer &cmd)
 		            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
 		            VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
 
+#if 0
 		// TODO: Could probably do this reference update in the render pass itself,
 		// just write output to two buffers ... This is more composable for now.
 		submit_update_upscaled_domain(cmd, ResolveStage::Post);
@@ -2097,6 +2112,7 @@ void Renderer::submit_render_pass(Vulkan::CommandBuffer &cmd)
 		submit_depth_blend(cmd, need_tmem_upload ? *tmem_instances : *tmem, true);
 		if (!caps.ubershader)
 			clear_indirect_buffer(cmd);
+#endif
 	}
 
 	if (need_render_pass)

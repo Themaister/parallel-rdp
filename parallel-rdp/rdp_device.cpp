@@ -173,7 +173,7 @@ void CommandProcessor::init_renderer()
 		opts.upscaling_factor = factor;
 	}
 
-	is_supported = renderer.init_renderer({});
+	is_supported = renderer.init_renderer(opts);
 
 	vi.set_device(&device);
 	vi.set_rdram(rdram.get(), rdram_offset, rdram_size);

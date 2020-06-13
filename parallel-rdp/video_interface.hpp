@@ -60,7 +60,7 @@ public:
 	int resolve_shader_define(const char *name, const char *define) const;
 
 	Vulkan::ImageHandle scanout(VkImageLayout target_layout, const ScanoutOptions &options = {}, unsigned scale_factor = 1);
-	void scanout_memory_range(unsigned &offset, unsigned &length);
+	void scanout_memory_range(unsigned &offset, unsigned &length) const;
 	void set_shader_bank(const ShaderBank *bank);
 
 private:

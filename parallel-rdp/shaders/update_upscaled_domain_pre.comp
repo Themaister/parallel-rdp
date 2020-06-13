@@ -1,6 +1,5 @@
 #version 450
 #include "small_types.h"
-#include "fb_formats.h"
 
 layout(local_size_x_id = 3) in;
 
@@ -8,7 +7,7 @@ layout(constant_id = 0) const int RDRAM_SIZE = 8 * 1024 * 1024;
 const int RDRAM_MASK_8 = RDRAM_SIZE - 1;
 const int RDRAM_MASK_16 = RDRAM_MASK_8 >> 1;
 const int RDRAM_MASK_32 = RDRAM_MASK_8 >> 2;
-layout(constant_id = 1) const int FB_FORMAT = 0;
+layout(constant_id = 1) const int FB_SIZE_LOG2 = 0;
 layout(constant_id = 2) const bool COLOR_DEPTH_ALIAS = false;
 layout(constant_id = 4) const int NUM_SAMPLES = 1;
 
@@ -142,19 +141,17 @@ void main()
     uint depth_index = index + registers.fb_depth_addr;
     uint color_index = index + registers.fb_addr;
 
-    switch (FB_FORMAT)
+    switch (FB_SIZE_LOG2)
     {
-        case FB_FMT_I4:
-        case FB_FMT_I8:
+        case 0:
             update_rdram_8(color_index);
             break;
 
-        case FB_FMT_RGBA5551:
-        case FB_FMT_IA88:
+        case 1:
             update_rdram_16(color_index);
             break;
 
-        case FB_FMT_RGBA8888:
+        case 2:
             update_rdram_32(color_index);
             break;
     }
