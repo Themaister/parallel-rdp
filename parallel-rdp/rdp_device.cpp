@@ -1014,7 +1014,10 @@ void CommandProcessor::scanout_sync(std::vector<RGBA> &colors, unsigned &width, 
 		renderer.resolve_coherency_external(offset, length);
 	}
 
-	auto handle = vi.scanout(VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+	ScanoutOptions opts = {};
+	opts.downscale = true;
+
+	auto handle = vi.scanout(VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, opts, renderer.get_scaling_factor());
 
 	if (!handle)
 	{
@@ -1030,7 +1033,7 @@ void CommandProcessor::scanout_sync(std::vector<RGBA> &colors, unsigned &width, 
 	Vulkan::BufferCreateInfo info = {};
 	info.size = width * height * sizeof(uint32_t);
 	info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-	info.domain = Vulkan::BufferDomain::CachedCoherentHostPreferCached;
+	info.domain = Vulkan::BufferDomain::CachedHost;
 	auto readback = device.create_buffer(info);
 
 	auto cmd = device.request_command_buffer();

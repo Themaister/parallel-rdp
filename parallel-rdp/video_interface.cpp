@@ -267,7 +267,7 @@ Vulkan::ImageHandle VideoInterface::vram_fetch_stage(const Registers &regs, unsi
 
 	if (scaling_factor > 1)
 	{
-		renderer->submit_update_upscaled_domain(*async_cmd, Renderer::ResolveStage::Pre);
+		renderer->submit_update_upscaled_domain_external(*async_cmd);
 		async_cmd->barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
 		                   VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
 	}
@@ -305,8 +305,8 @@ Vulkan::ImageHandle VideoInterface::vram_fetch_stage(const Registers &regs, unsi
 
 	if (scaling_factor > 1)
 	{
-		async_cmd->set_storage_buffer(0, 1, *renderer->upscaling_multisampled_rdram);
-		async_cmd->set_storage_buffer(0, 2, *renderer->upscaling_multisampled_hidden_rdram);
+		async_cmd->set_storage_buffer(0, 1, *renderer->get_upscaled_rdram_buffer());
+		async_cmd->set_storage_buffer(0, 2, *renderer->get_upscaled_hidden_rdram_buffer());
 	}
 	else
 	{
@@ -742,7 +742,7 @@ Vulkan::ImageHandle VideoInterface::scale_stage(Vulkan::CommandBuffer &cmd, Vulk
 Vulkan::ImageHandle VideoInterface::crop_stage(Vulkan::CommandBuffer &cmd, Vulkan::Image &scale_image, const VkRect2D &crop_rect) const
 {
 	Vulkan::ImageHandle crop_image;
-	cmd.image_barrier(*prev_scanout_image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+	cmd.image_barrier(scale_image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
 	                  VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
 	                  VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
 	                  VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT);
@@ -764,6 +764,34 @@ Vulkan::ImageHandle VideoInterface::crop_stage(Vulkan::CommandBuffer &cmd, Vulka
 	               { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 });
 
 	return crop_image;
+}
+
+Vulkan::ImageHandle VideoInterface::downscale_stage(Vulkan::CommandBuffer &cmd, Vulkan::Image &scale_image,
+                                                    unsigned scaling_factor) const
+{
+	Vulkan::ImageHandle downscale_image;
+	unsigned width = scale_image.get_width();
+	unsigned height = scale_image.get_height();
+
+	Vulkan::ImageCreateInfo rt_info = Vulkan::ImageCreateInfo::render_target(
+			width / scaling_factor, height / scaling_factor,
+			VK_FORMAT_R8G8B8A8_UNORM);
+
+	rt_info.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+	rt_info.initial_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+	rt_info.misc = Vulkan::IMAGE_MISC_MUTABLE_SRGB_BIT;
+	downscale_image = device->create_image(rt_info);
+
+	cmd.image_barrier(*downscale_image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+	                  VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0,
+	                  VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT);
+
+	cmd.blit_image(*downscale_image, scale_image,
+	               {}, { int(rt_info.width), int(rt_info.height), 1 },
+	               {}, { int(width), int(height), 1 },
+	               0, 0);
+
+	return downscale_image;
 }
 
 Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const ScanoutOptions &options, unsigned scaling_factor)
@@ -914,9 +942,24 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const S
 		prev_scanout_image = scale_image;
 	}
 
-	cmd->image_barrier(*scale_image, src_layout, target_layout,
-	                   layout_to_stage(src_layout), layout_to_access(src_layout),
-	                   layout_to_stage(target_layout), layout_to_access(target_layout));
+	if (options.downscale && scaling_factor > 1)
+	{
+		cmd->image_barrier(*scale_image, src_layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+		                   layout_to_stage(src_layout), layout_to_access(src_layout),
+		                   VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT);
+
+		scale_image = downscale_stage(*cmd, *scale_image, scaling_factor);
+
+		cmd->image_barrier(*scale_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, target_layout,
+		                   VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+		                   layout_to_stage(target_layout), layout_to_access(target_layout));
+	}
+	else
+	{
+		cmd->image_barrier(*scale_image, src_layout, target_layout,
+		                   layout_to_stage(src_layout), layout_to_access(src_layout),
+		                   layout_to_stage(target_layout), layout_to_access(target_layout));
+	}
 
 	device->submit(cmd);
 	scanout = std::move(scale_image);

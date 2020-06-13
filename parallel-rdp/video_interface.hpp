@@ -32,6 +32,8 @@ struct ScanoutOptions
 {
 	bool crop_overscan = false;
 	bool persist_frame_on_invalid_input = false;
+	bool downscale = false;
+
 	struct
 	{
 		bool aa = true;
@@ -127,6 +129,9 @@ private:
 	Vulkan::ImageHandle crop_stage(Vulkan::CommandBuffer &cmd,
 	                               Vulkan::Image &scale_image,
 	                               const VkRect2D &crop_rect) const;
+	Vulkan::ImageHandle downscale_stage(Vulkan::CommandBuffer &cmd,
+	                                    Vulkan::Image &scale_image,
+	                                    unsigned scaling_factor) const;
 	static bool need_fetch_bug_emulation(const Registers &reg, unsigned scaling_factor);
 };
 }

@@ -1806,6 +1806,11 @@ void Renderer::submit_tile_binning_combined(Vulkan::CommandBuffer &cmd, bool ups
 	cmd.end_region();
 }
 
+void Renderer::submit_update_upscaled_domain_external(Vulkan::CommandBuffer &cmd)
+{
+	submit_update_upscaled_domain(cmd, ResolveStage::Pre);
+}
+
 void Renderer::submit_update_upscaled_domain(Vulkan::CommandBuffer &cmd, ResolveStage stage)
 {
 #ifdef PARALLEL_RDP_SHADER_DIR
@@ -2410,6 +2415,21 @@ void Renderer::resolve_coherency_external(unsigned offset, unsigned length)
 	resolve_coherency_host_to_gpu(*stream.cmd);
 	device->submit(stream.cmd);
 	stream.cmd.reset();
+}
+
+unsigned Renderer::get_scaling_factor() const
+{
+	return caps.upscaling;
+}
+
+const Vulkan::Buffer *Renderer::get_upscaled_rdram_buffer() const
+{
+	return upscaling_multisampled_rdram.get();
+}
+
+const Vulkan::Buffer *Renderer::get_upscaled_hidden_rdram_buffer() const
+{
+	return upscaling_multisampled_hidden_rdram.get();
 }
 
 void Renderer::resolve_coherency_host_to_gpu(Vulkan::CommandBuffer &cmd)

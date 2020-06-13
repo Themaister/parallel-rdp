@@ -119,6 +119,11 @@ public:
 	int resolve_shader_define(const char *name, const char *define) const;
 
 	void resolve_coherency_external(unsigned offset, unsigned length);
+	void submit_update_upscaled_domain_external(Vulkan::CommandBuffer &cmd);
+	unsigned get_scaling_factor() const;
+
+	const Vulkan::Buffer *get_upscaled_rdram_buffer() const;
+	const Vulkan::Buffer *get_upscaled_hidden_rdram_buffer() const;
 
 private:
 	CommandProcessor &processor;
@@ -359,7 +364,5 @@ private:
 	std::atomic_uint32_t active_submissions;
 	void enqueue_fence_wait(Vulkan::Fence fence);
 	uint64_t last_submit_ns = 0;
-
-	friend class VideoInterface;
 };
 }
