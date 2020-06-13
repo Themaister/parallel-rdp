@@ -25,10 +25,8 @@
 
 #ifdef RASTERIZER_SPEC_CONSTANT
 const int SCALING_LOG2 = (STATIC_STATE_FLAGS >> RASTERIZATION_UPSCALING_LOG2_BIT_OFFSET) & 3;
-#else
-const int SCALING_LOG2 = 0;
-#endif
 const int SCALING_FACTOR = 1 << SCALING_LOG2;
+#endif
 
 #include "coverage.h"
 #include "interpolation.h"
