@@ -40,10 +40,10 @@ const int SCALING_FACTOR = 1 << SCALING_LOG2;
 bool shade_pixel(int x, int y, uint primitive_index, out ShadedData shaded)
 {
 	SpanInfoOffsets span_offsets = load_span_offsets(primitive_index);
-	if (y < span_offsets.ylo || y > (span_offsets.yhi * SCALING_FACTOR + (SCALING_FACTOR - 1)))
+	if ((y < (SCALING_FACTOR * span_offsets.ylo)) || (y > (span_offsets.yhi * SCALING_FACTOR + (SCALING_FACTOR - 1))))
 		return false;
 
-	SpanSetup span_setup = load_span_setup(span_offsets.offset + (y - span_offsets.ylo));
+	SpanSetup span_setup = load_span_setup(SCALING_FACTOR * span_offsets.offset + (y - SCALING_FACTOR * span_offsets.ylo));
 	if (span_setup.valid_line == U16_C(0))
 		return false;
 

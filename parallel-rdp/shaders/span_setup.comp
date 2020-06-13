@@ -146,8 +146,8 @@ void main()
 
     i16 y_sub = i16(y * SUBPIXELS);
     i16x4 y_subs = y_sub + i16x4(0, 1, 2, 3);
-    i16 ylo = max(setup.yh, i16(scissor.ylo * SCALING_FACTOR));
-    i16 yhi = min(setup.yl, i16(scissor.yhi * SCALING_FACTOR));
+    i16 ylo = max(setup.yh, i16(scissor.ylo)) * i16(SCALING_FACTOR);
+    i16 yhi = min(setup.yl, i16(scissor.yhi)) * i16(SCALING_FACTOR);
 
     bvec4 clip_lo_y = lessThan(y_subs, i16x4(ylo));
     bvec4 clip_hi_y = greaterThanEqual(y_subs, i16x4(yhi));
@@ -157,7 +157,7 @@ void main()
     ivec4 xh = setup.xh * SCALING_FACTOR + (y_subs - yh_interpolation_base) * setup.dxhdy;
     ivec4 xm = setup.xm * SCALING_FACTOR + (y_subs - yh_interpolation_base) * setup.dxmdy;
     ivec4 xl = setup.xl * SCALING_FACTOR + (y_subs - ym_interpolation_base) * setup.dxldy;
-    xl = mix(xl, xm, lessThan(y_subs, ivec4(setup.ym)));
+    xl = mix(xl, xm, lessThan(y_subs, ivec4(SCALING_FACTOR * setup.ym)));
 
     i16x4 xh_shifted = quantize_x(xh);
     i16x4 xl_shifted = quantize_x(xl);
@@ -194,8 +194,6 @@ void main()
 
     i16 start_x = min4(xleft) >> I16_C(3);
     i16 end_x = max4(xright) >> I16_C(3);
-
-    GENERIC_MESSAGE2(start_x, end_x);
 
     span_setup.xleft = xleft;
     span_setup.xright = xright;

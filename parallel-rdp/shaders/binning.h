@@ -77,8 +77,8 @@ ivec2 interpolate_xs(TriangleSetup setup, ivec4 ys, bool flip, int scaling)
 
 bool bin_primitive(TriangleSetup setup, ivec2 lo, ivec2 hi, int scaling)
 {
-    int start_y = scaling * lo.y * SUBPIXELS_Y;
-    int end_y = scaling * ((hi.y + 1) * SUBPIXELS_Y) - 1;
+    int start_y = lo.y * SUBPIXELS_Y;
+    int end_y = (hi.y * SUBPIXELS_Y) + (SUBPIXELS_Y - 1);
 
     // First, we clip start/end against y_lo, y_hi.
     start_y = max(start_y, scaling * int(setup.yh));

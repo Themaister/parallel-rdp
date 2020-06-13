@@ -1907,7 +1907,7 @@ void Renderer::submit_depth_blend(Vulkan::CommandBuffer &cmd, Vulkan::Buffer &tm
 	if (upscaled)
 		cmd.set_storage_buffer(0, 0, *upscaling_multisampled_rdram);
 	else
-		cmd.set_storage_buffer(0, 0, *rdram, rdram_offset, rdram_size * (is_host_coherent || upscaled ? 1 : 2));
+		cmd.set_storage_buffer(0, 0, *rdram, rdram_offset, rdram_size * (is_host_coherent ? 1 : 2));
 	cmd.set_storage_buffer(0, 1, upscaled ? *upscaling_multisampled_hidden_rdram : *hidden_rdram);
 	cmd.set_storage_buffer(0, 2, tmem);
 
@@ -2047,8 +2047,6 @@ void Renderer::submit_render_pass(Vulkan::CommandBuffer &cmd)
 		if (caps.upscaling > 1)
 			submit_update_upscaled_domain(cmd, ResolveStage::Pre);
 	}
-	else
-		base_primitive_index += stream.triangle_setup.size();
 
 	if (need_tmem_upload)
 		update_tmem_instances(cmd);
@@ -2088,7 +2086,6 @@ void Renderer::submit_render_pass(Vulkan::CommandBuffer &cmd)
 		            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
 		            VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
 
-#if 0
 		// TODO: Could probably do this reference update in the render pass itself,
 		// just write output to two buffers ... This is more composable for now.
 		submit_update_upscaled_domain(cmd, ResolveStage::Post);
@@ -2114,11 +2111,9 @@ void Renderer::submit_render_pass(Vulkan::CommandBuffer &cmd)
 		submit_depth_blend(cmd, need_tmem_upload ? *tmem_instances : *tmem, true);
 		if (!caps.ubershader)
 			clear_indirect_buffer(cmd);
-#endif
 	}
 
-	if (need_render_pass)
-		base_primitive_index += uint32_t(stream.triangle_setup.size());
+	base_primitive_index += uint32_t(stream.triangle_setup.size());
 
 	cmd.barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
 	            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
