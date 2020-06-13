@@ -2139,13 +2139,13 @@ void Renderer::maintain_queues()
 	// These heuristics ensures we don't wait too long to flush render passes,
 	// and also ensure that we don't spam submissions too often, causing massive bubbles on GPU.
 
-	// right away so we don't have to wait for heavy full-resolution content.
 	// If we get a lot of small render passes in a row, it makes sense to batch them up, e.g. 8 at a time.
 	// If we get 2 full render passes of ~256 primitives, that's also a good indication we should flush since we're getting spammed.
 	// If we have no pending submissions, the GPU is idle and there is no reason not to submit.
 	// If we haven't submitted anything in a while (1.0 ms), it's probably fine to submit again.
 	if (pending_render_passes >= ImplementationConstants::MaxPendingRenderPassesBeforeFlush ||
 	    pending_primitives >= Limits::MaxPrimitives ||
+	    pending_render_passes_upscaled > 0 ||
 	    active_submissions.load(std::memory_order_relaxed) == 0 ||
 	    int64_t(Util::get_current_time_nsecs() - last_submit_ns) > 1000000)
 	{
