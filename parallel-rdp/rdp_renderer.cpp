@@ -551,6 +551,8 @@ bool Renderer::init_internal_upscaling_factor(const RendererOptions &options)
 
 	info.size = rdram_size;
 	upscaling_reference_rdram = device->create_buffer(info);
+	device->set_name(*upscaling_reference_rdram, "reference-rdram");
+
 	info.size = rdram_size * factor * factor;
 	upscaling_multisampled_rdram = device->create_buffer(info);
 	device->set_name(*upscaling_multisampled_rdram, "multisampled-rdram");
