@@ -379,6 +379,7 @@ constexpr uint32_t VI_V_OFFSET_NTSC = 34;
 constexpr uint32_t VI_V_OFFSET_PAL = 44;
 constexpr uint32_t VI_V_RES_NTSC = 480;
 constexpr uint32_t VI_V_RES_PAL = 576;
+constexpr int VI_SCANOUT_WIDTH = 640;
 
 static inline uint32_t make_default_v_start()
 {
@@ -387,7 +388,7 @@ static inline uint32_t make_default_v_start()
 
 static inline uint32_t make_default_h_start()
 {
-	return make_vi_start_register(VI_H_OFFSET_NTSC, VI_H_OFFSET_NTSC + 640);
+	return make_vi_start_register(VI_H_OFFSET_NTSC, VI_H_OFFSET_NTSC + VI_SCANOUT_WIDTH);
 }
 
 template <int bits>

@@ -713,7 +713,7 @@ void DebugApplication::replay_until(const Op &op)
 			break;
 
 		case 1:
-			break;
+			//break;
 			prim.vertices[0].x = 0.2f;
 			prim.vertices[0].y = -0.83f;
 			prim.vertices[1].x = -0.1f;

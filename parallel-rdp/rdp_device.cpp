@@ -160,14 +160,25 @@ void CommandProcessor::init_renderer()
 		return;
 	}
 
-	is_supported = renderer.set_device(&device);
+	renderer.set_device(&device);
 	renderer.set_rdram(rdram.get(), host_rdram, rdram_offset, rdram_size, is_host_coherent);
 	renderer.set_hidden_rdram(hidden_rdram.get());
 	renderer.set_tmem(tmem.get());
 
+	RendererOptions opts;
+	if (const char *env = getenv("PARALLEL_RDP_UPSCALING"))
+	{
+		unsigned factor = strtoul(env, nullptr, 0);
+		LOGI("Enabling upscaling: %ux.\n", factor);
+		opts.upscaling_factor = factor;
+	}
+
+	is_supported = renderer.init_renderer(opts);
+
 	vi.set_device(&device);
 	vi.set_rdram(rdram.get(), rdram_offset, rdram_size);
 	vi.set_hidden_rdram(hidden_rdram.get());
+	vi.set_renderer(&renderer);
 
 #ifndef PARALLEL_RDP_SHADER_DIR
 	shader_bank.reset(new ShaderBank(device, [&](const char *name, const char *define) -> int {
@@ -675,7 +686,7 @@ void CommandProcessor::op_fill_rectangle(const uint32_t *words)
 	setup.ym = yl;
 	setup.yl = yl;
 	setup.yh = yh;
-	setup.flags = TRIANGLE_SETUP_FLIP_BIT;
+	setup.flags = TRIANGLE_SETUP_FLIP_BIT | TRIANGLE_SETUP_DISABLE_UPSCALING_BIT;
 
 	renderer.draw_flat_primitive(setup);
 }
@@ -707,7 +718,7 @@ void CommandProcessor::op_texture_rectangle(const uint32_t *words)
 	setup.ym = yl;
 	setup.yl = yl;
 	setup.yh = yh;
-	setup.flags = TRIANGLE_SETUP_FLIP_BIT;
+	setup.flags = TRIANGLE_SETUP_FLIP_BIT | TRIANGLE_SETUP_DISABLE_UPSCALING_BIT;
 	setup.tile = tile;
 
 	attr.s = s << 16;
@@ -749,7 +760,7 @@ void CommandProcessor::op_texture_rectangle_flip(const uint32_t *words)
 	setup.ym = yl;
 	setup.yl = yl;
 	setup.yh = yh;
-	setup.flags = TRIANGLE_SETUP_FLIP_BIT;
+	setup.flags = TRIANGLE_SETUP_FLIP_BIT | TRIANGLE_SETUP_DISABLE_UPSCALING_BIT;
 	setup.tile = tile;
 
 	attr.s = s << 16;
@@ -844,10 +855,9 @@ void CommandProcessor::enqueue_command_direct(unsigned num_words, const uint32_t
 	{
 	case Op::MetaSignalTimeline:
 	{
-		auto fence = renderer.flush_and_signal();
+		renderer.flush_and_signal();
 		uint64_t val = words[1] | (uint64_t(words[2]) << 32);
 		CoherencyOperation signal_op;
-		signal_op.fence = std::move(fence);
 		signal_op.timeline_value = val;
 		timeline_worker.push(std::move(signal_op));
 		break;
@@ -974,7 +984,7 @@ Vulkan::ImageHandle CommandProcessor::scanout(const ScanoutOptions &opts)
 		renderer.resolve_coherency_external(offset, length);
 	}
 
-	auto scanout = vi.scanout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, opts);
+	auto scanout = vi.scanout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, opts, renderer.get_scaling_factor());
 	return scanout;
 }
 
@@ -1003,7 +1013,10 @@ void CommandProcessor::scanout_sync(std::vector<RGBA> &colors, unsigned &width, 
 		renderer.resolve_coherency_external(offset, length);
 	}
 
-	auto handle = vi.scanout(VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+	ScanoutOptions opts = {};
+	opts.downscale = true;
+
+	auto handle = vi.scanout(VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, opts, renderer.get_scaling_factor());
 
 	if (!handle)
 	{
@@ -1019,7 +1032,7 @@ void CommandProcessor::scanout_sync(std::vector<RGBA> &colors, unsigned &width, 
 	Vulkan::BufferCreateInfo info = {};
 	info.size = width * height * sizeof(uint32_t);
 	info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-	info.domain = Vulkan::BufferDomain::CachedCoherentHostPreferCached;
+	info.domain = Vulkan::BufferDomain::CachedHost;
 	auto readback = device.create_buffer(info);
 
 	auto cmd = device.request_command_buffer();
@@ -1045,7 +1058,7 @@ void CommandProcessor::FenceExecutor::notify_work_locked(const CoherencyOperatio
 
 bool CommandProcessor::FenceExecutor::is_sentinel(const CoherencyOperation &work) const
 {
-	return !work.fence;
+	return !work.fence && !work.timeline_value;
 }
 
 static void masked_memcpy(uint8_t * __restrict dst,
@@ -1086,7 +1099,8 @@ static void masked_memcpy(uint8_t * __restrict dst,
 
 void CommandProcessor::FenceExecutor::perform_work(CoherencyOperation &work)
 {
-	work.fence->wait();
+	if (work.fence)
+		work.fence->wait();
 
 	if (work.unlock_cookie)
 		work.unlock_cookie->fetch_sub(1, std::memory_order_relaxed);
