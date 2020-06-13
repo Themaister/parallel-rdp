@@ -77,6 +77,13 @@ i16 max4(i16x4 v)
     return max(v2.x, v2.y);
 }
 
+ivec4 interpolate_snapped(ivec4 dvalue, int dy)
+{
+    int dy_shifted = dy >> SCALING_LOG2;
+    int dy_masked = dy & (SCALING_FACTOR - 1);
+    return dy_shifted * dvalue + dy_masked * (dvalue >> SCALING_LOG2);
+}
+
 void main()
 {
     ivec3 job_indices = ivec3(texelFetch(uInterpolationJobs, int(gl_WorkGroupID.x)).xyz);
@@ -104,7 +111,11 @@ void main()
         int y_interpolation_base = int(setup.yh) >> 2;
         y_interpolation_base *= SCALING_FACTOR;
 
-        int xh = setup.xh * SCALING_FACTOR + (y - y_interpolation_base) * (setup.dxhdy << 2);
+        // For high-resolution interpolation, make sure we snap interpolation correctly at whole pixels,
+        // and quantize derivatives in-between pixels.
+        int dy = y - y_interpolation_base;
+
+        int xh = setup.xh * SCALING_FACTOR + dy * (setup.dxhdy << 2);
 
         ivec4 drgba_diff = ivec4(0);
         ivec4 dstzw_diff = ivec4(0);
@@ -126,13 +137,11 @@ void main()
         int base_x = xh >> 16;
         int xfrac = skip_xfrac ? 0 : ((xh >> 8) & 0xff);
 
-        ivec4 rgba = attr.rgba;
-        rgba += (attr.drgba_de * (y - y_interpolation_base)) >> SCALING_LOG2;
-        rgba = ((rgba & ~0x1ff) + drgba_diff - (xfrac * (((attr.drgba_dx >> 8) & ~1) >> SCALING_LOG2))) & ~0x3ff;
+        ivec4 rgba = attr.rgba + interpolate_snapped(attr.drgba_de, dy);
+        rgba = ((rgba & ~0x1ff) + drgba_diff - interpolate_snapped((attr.drgba_dx >> 8) & ~1, xfrac)) & ~0x3ff;
 
-        ivec4 stzw = attr.stzw;
-        stzw += (attr.dstzw_de * (y - y_interpolation_base)) >> SCALING_LOG2;
-        stzw = ((stzw & ~0x1ff) + dstzw_diff - (xfrac * (((attr.dstzw_dx >> 8) & ~1) >> SCALING_LOG2))) & ~0x3ff;
+        ivec4 stzw = attr.stzw + interpolate_snapped(attr.dstzw_de, dy);
+        stzw = ((stzw & ~0x1ff) + dstzw_diff - interpolate_snapped((attr.dstzw_dx >> 8) & ~1, xfrac)) & ~0x3ff;
 
         span_setup.rgba = rgba;
         span_setup.stzw = stzw;
