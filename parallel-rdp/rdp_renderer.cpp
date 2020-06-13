@@ -258,15 +258,15 @@ void Renderer::init_buffers(const RendererOptions &options)
 
 	info.size = sizeof(uint32_t) *
 	            (Limits::MaxPrimitives / 32) *
-	            options.upscaling_factor * (caps.max_width / ImplementationConstants::TileWidth) *
-	            options.upscaling_factor * (caps.max_height / ImplementationConstants::TileHeight);
+	            (caps.max_width / ImplementationConstants::TileWidth) *
+	            (caps.max_height / ImplementationConstants::TileHeight);
 
 	tile_binning_buffer = device->create_buffer(info);
 	device->set_name(*tile_binning_buffer, "tile-binning-buffer");
 
 	info.size = sizeof(uint32_t) *
-	            options.upscaling_factor * (caps.max_width / ImplementationConstants::TileWidth) *
-	            options.upscaling_factor * (caps.max_height / ImplementationConstants::TileHeight);
+	            (caps.max_width / ImplementationConstants::TileWidth) *
+	            (caps.max_height / ImplementationConstants::TileHeight);
 
 	tile_binning_buffer_coarse = device->create_buffer(info);
 	device->set_name(*tile_binning_buffer_coarse, "tile-binning-buffer-coarse");
@@ -275,8 +275,8 @@ void Renderer::init_buffers(const RendererOptions &options)
 	{
 		info.size = sizeof(uint32_t) *
 		            (Limits::MaxPrimitives / 32) *
-		            options.upscaling_factor * (caps.max_width / ImplementationConstants::TileWidth) *
-		            options.upscaling_factor * (caps.max_height / ImplementationConstants::TileHeight);
+		            (caps.max_width / ImplementationConstants::TileWidth) *
+		            (caps.max_height / ImplementationConstants::TileHeight);
 
 		per_tile_offsets = device->create_buffer(info);
 		device->set_name(*per_tile_offsets, "per-tile-offsets");
