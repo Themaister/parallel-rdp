@@ -855,10 +855,9 @@ void CommandProcessor::enqueue_command_direct(unsigned num_words, const uint32_t
 	{
 	case Op::MetaSignalTimeline:
 	{
-		auto fence = renderer.flush_and_signal();
+		renderer.flush_and_signal();
 		uint64_t val = words[1] | (uint64_t(words[2]) << 32);
 		CoherencyOperation signal_op;
-		signal_op.fence = std::move(fence);
 		signal_op.timeline_value = val;
 		timeline_worker.push(std::move(signal_op));
 		break;
@@ -1059,7 +1058,7 @@ void CommandProcessor::FenceExecutor::notify_work_locked(const CoherencyOperatio
 
 bool CommandProcessor::FenceExecutor::is_sentinel(const CoherencyOperation &work) const
 {
-	return !work.fence;
+	return !work.fence && !work.timeline_value;
 }
 
 static void masked_memcpy(uint8_t * __restrict dst,
@@ -1100,7 +1099,8 @@ static void masked_memcpy(uint8_t * __restrict dst,
 
 void CommandProcessor::FenceExecutor::perform_work(CoherencyOperation &work)
 {
-	work.fence->wait();
+	if (work.fence)
+		work.fence->wait();
 
 	if (work.unlock_cookie)
 		work.unlock_cookie->fetch_sub(1, std::memory_order_relaxed);

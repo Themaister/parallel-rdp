@@ -114,7 +114,7 @@ public:
 	// Called when the command thread has not seen any activity in a given period of time.
 	// This is useful so we don't needlessly queue up work when we might as well kick it to the GPU.
 	void notify_idle_command_thread();
-	Vulkan::Fence flush_and_signal();
+	void flush_and_signal();
 
 	int resolve_shader_define(const char *name, const char *define) const;
 
@@ -284,13 +284,19 @@ private:
 	unsigned buffer_instance = 0;
 	uint32_t base_primitive_index = 0;
 	unsigned pending_render_passes = 0;
+	unsigned pending_render_passes_upscaled = 0;
 	unsigned pending_primitives = 0;
 
 	bool tmem_upload_needs_flush(uint32_t addr) const;
 
+	bool render_pass_is_upscaled() const;
+	bool should_render_upscaled() const;
+
 	void flush_queues();
 	void submit_render_pass(Vulkan::CommandBuffer &cmd);
-	Vulkan::Fence submit_to_queue();
+	void submit_render_pass_upscaled(Vulkan::CommandBuffer &cmd);
+	void submit_render_pass_end(Vulkan::CommandBuffer &cmd);
+	void submit_to_queue();
 	void begin_new_context();
 	void reset_context();
 	bool need_flush() const;

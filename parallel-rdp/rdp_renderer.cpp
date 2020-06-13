@@ -642,10 +642,10 @@ void Renderer::set_tmem(Vulkan::Buffer *buffer)
 	device->set_name(*tmem, "tmem");
 }
 
-Vulkan::Fence Renderer::flush_and_signal()
+void Renderer::flush_and_signal()
 {
 	flush_queues();
-	return submit_to_queue();
+	submit_to_queue();
 }
 
 void Renderer::set_color_framebuffer(uint32_t addr, uint32_t width, FBFormat fmt)
@@ -2066,6 +2066,19 @@ void Renderer::submit_render_pass(Vulkan::CommandBuffer &cmd)
 	if (need_render_pass)
 		submit_depth_blend(cmd, need_tmem_upload ? *tmem_instances : *tmem, false);
 
+	clear_indirect_buffer(cmd);
+
+	if (render_pass_is_upscaled())
+	{
+		cmd.barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
+		            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+		            VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+
+		// TODO: Could probably do this reference update in the render pass itself,
+		// just write output to two buffers ... This is more composable for now.
+		submit_update_upscaled_domain(cmd, ResolveStage::Post);
+	}
+
 	if (caps.timestamp >= 1)
 	{
 		render_pass_end = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
@@ -2074,47 +2087,47 @@ void Renderer::submit_render_pass(Vulkan::CommandBuffer &cmd)
 		tag += " (" + std::to_string(stream.triangle_setup.size()) + " triangles)";
 		device->register_time_interval("RDP GPU", std::move(render_pass_start), std::move(render_pass_end), "render-pass", std::move(tag));
 	}
+}
 
-	clear_indirect_buffer(cmd);
+void Renderer::submit_render_pass_upscaled(Vulkan::CommandBuffer &cmd)
+{
+	Vulkan::QueryPoolHandle start_ts, end_ts;
+	if (caps.timestamp >= 1)
+		start_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 
-	// TODO: If upscaling, we should flush submit here so we don't wait on irrelevant work happening on GPU in sync mode.
+	bool need_tmem_upload = !stream.tmem_upload_infos.empty();
+	submit_span_setup_jobs(cmd, true);
+	submit_tile_binning_combined(cmd, true);
 
-	if (caps.upscaling > 1 && need_render_pass)
+	cmd.barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
+	            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
+	            (!caps.ubershader ? VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT : 0),
+	            VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT |
+	            (!caps.ubershader ? VK_ACCESS_INDIRECT_COMMAND_READ_BIT : 0));
+
+	if (!caps.ubershader)
 	{
-		// Now, do the render pass upscaled.
-		cmd.barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
+		submit_rasterization(cmd, need_tmem_upload ? *tmem_instances : *tmem, true);
+		cmd.barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+		            VK_ACCESS_SHADER_WRITE_BIT,
 		            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-		            VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
-
-		// TODO: Could probably do this reference update in the render pass itself,
-		// just write output to two buffers ... This is more composable for now.
-		submit_update_upscaled_domain(cmd, ResolveStage::Post);
-
-		submit_span_setup_jobs(cmd, true);
-		submit_tile_binning_combined(cmd, true);
-
-		cmd.barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
-		            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
-		            (!caps.ubershader ? VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT : 0),
-		            VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT |
-		            (!caps.ubershader ? VK_ACCESS_INDIRECT_COMMAND_READ_BIT : 0));
-
-		if (!caps.ubershader)
-		{
-			submit_rasterization(cmd, need_tmem_upload ? *tmem_instances : *tmem, true);
-			cmd.barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-			            VK_ACCESS_SHADER_WRITE_BIT,
-			            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-			            VK_ACCESS_SHADER_READ_BIT);
-		}
-
-		submit_depth_blend(cmd, need_tmem_upload ? *tmem_instances : *tmem, true);
-		if (!caps.ubershader)
-			clear_indirect_buffer(cmd);
+		            VK_ACCESS_SHADER_READ_BIT);
 	}
 
-	base_primitive_index += uint32_t(stream.triangle_setup.size());
+	submit_depth_blend(cmd, need_tmem_upload ? *tmem_instances : *tmem, true);
+	if (!caps.ubershader)
+		clear_indirect_buffer(cmd);
 
+	if (caps.timestamp >= 1)
+	{
+		end_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+		device->register_time_interval("RDP GPU", std::move(start_ts), std::move(end_ts), "render-pass-upscaled");
+	}
+}
+
+void Renderer::submit_render_pass_end(Vulkan::CommandBuffer &cmd)
+{
+	base_primitive_index += uint32_t(stream.triangle_setup.size());
 	cmd.barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
 	            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
 	            VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
@@ -2126,6 +2139,7 @@ void Renderer::maintain_queues()
 	// These heuristics ensures we don't wait too long to flush render passes,
 	// and also ensure that we don't spam submissions too often, causing massive bubbles on GPU.
 
+	// right away so we don't have to wait for heavy full-resolution content.
 	// If we get a lot of small render passes in a row, it makes sense to batch them up, e.g. 8 at a time.
 	// If we get 2 full render passes of ~256 primitives, that's also a good indication we should flush since we're getting spammed.
 	// If we have no pending submissions, the GPU is idle and there is no reason not to submit.
@@ -2159,17 +2173,22 @@ void Renderer::enqueue_fence_wait(Vulkan::Fence fence)
 	last_submit_ns = Util::get_current_time_nsecs();
 }
 
-Vulkan::Fence Renderer::submit_to_queue()
+void Renderer::submit_to_queue()
 {
+	bool pending_host_visible_render_passes = pending_render_passes != 0;
 	pending_render_passes = 0;
+	pending_render_passes_upscaled = 0;
 	pending_primitives = 0;
 
 	if (!stream.cmd)
 	{
-		Vulkan::Fence fence;
-		device->submit_empty(Vulkan::CommandBuffer::Type::AsyncCompute, &fence);
-		enqueue_fence_wait(fence);
-		return fence;
+		if (pending_host_visible_render_passes)
+		{
+			Vulkan::Fence fence;
+			device->submit_empty(Vulkan::CommandBuffer::Type::AsyncCompute, &fence);
+			enqueue_fence_wait(fence);
+		}
+		return;
 	}
 
 	bool need_host_barrier = is_host_coherent || !incoherent.staging_readback;
@@ -2184,17 +2203,24 @@ Vulkan::Fence Renderer::submit_to_queue()
 	if (is_host_coherent)
 	{
 		device->submit(stream.cmd, &fence);
-		enqueue_fence_wait(fence);
+		if (pending_host_visible_render_passes)
+			enqueue_fence_wait(fence);
 	}
 	else
 	{
 		CoherencyOperation op;
-		resolve_coherency_gpu_to_host(op, *stream.cmd);
+		if (pending_host_visible_render_passes)
+			resolve_coherency_gpu_to_host(op, *stream.cmd);
+
 		device->submit(stream.cmd, &fence);
-		enqueue_fence_wait(fence);
-		op.fence = fence;
-		if (!op.copies.empty())
-			processor.enqueue_coherency_operation(std::move(op));
+
+		if (pending_host_visible_render_passes)
+		{
+			enqueue_fence_wait(fence);
+			op.fence = fence;
+			if (!op.copies.empty())
+				processor.enqueue_coherency_operation(std::move(op));
+		}
 	}
 
 	Util::for_each_bit(sync_indices_needs_flush, [&](unsigned bit) {
@@ -2203,7 +2229,6 @@ Vulkan::Fence Renderer::submit_to_queue()
 	});
 	sync_indices_needs_flush = 0;
 	stream.cmd.reset();
-	return fence;
 }
 
 void Renderer::reset_context()
@@ -2685,11 +2710,37 @@ void Renderer::flush_queues()
 	if (!is_host_coherent)
 		resolve_coherency_host_to_gpu(*stream.cmd);
 	instance.upload(*device, stream, *stream.cmd);
+
 	submit_render_pass(*stream.cmd);
 	pending_render_passes++;
-	begin_new_context();
 
+	if (render_pass_is_upscaled())
+	{
+		maintain_queues();
+		ensure_command_buffer();
+		submit_render_pass_upscaled(*stream.cmd);
+		pending_render_passes_upscaled++;
+	}
+
+	submit_render_pass_end(*stream.cmd);
+
+	begin_new_context();
 	maintain_queues();
+}
+
+bool Renderer::render_pass_is_upscaled() const
+{
+	bool need_render_pass = fb.width != 0 && fb.deduced_height != 0 && !stream.span_info_jobs.empty();
+	return caps.upscaling > 1 && need_render_pass && should_render_upscaled();
+}
+
+bool Renderer::should_render_upscaled() const
+{
+	// A heuristic. There is no point to render upscaled for purely off-screen passes.
+	// We should ideally only upscale the final pass which hits screen.
+	// From a heuristic point-of-view we expect only 16-bit/32-bit frame buffers to be relevant,
+	// and only frame buffers with at least 256 pixels.
+	return (fb.fmt == FBFormat::RGBA5551 || fb.fmt == FBFormat::RGBA8888) && fb.width >= 256;
 }
 
 void Renderer::ensure_command_buffer()
