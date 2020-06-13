@@ -108,5 +108,25 @@ private:
 		uint32_t status;
 	};
 	Registers decode_vi_registers() const;
+	Vulkan::ImageHandle vram_fetch_stage(const Registers &registers,
+	                                     unsigned scaling_factor) const;
+	Vulkan::ImageHandle aa_fetch_stage(Vulkan::CommandBuffer &cmd,
+	                                   Vulkan::Image &vram_image,
+	                                   const Registers &registers,
+	                                   unsigned scaling_factor) const;
+	Vulkan::ImageHandle divot_stage(Vulkan::CommandBuffer &cmd,
+	                                Vulkan::Image &aa_image,
+	                                const Registers &registers,
+	                                unsigned scaling_factor) const;
+	Vulkan::ImageHandle scale_stage(Vulkan::CommandBuffer &cmd,
+	                                Vulkan::Image &divot_image,
+	                                Registers registers,
+	                                unsigned scaling_factor,
+	                                bool degenerate, bool &can_crop,
+	                                VkRect2D &crop_rect) const;
+	Vulkan::ImageHandle crop_stage(Vulkan::CommandBuffer &cmd,
+	                               Vulkan::Image &scale_image,
+	                               const VkRect2D &crop_rect) const;
+	static bool need_fetch_bug_emulation(const Registers &reg, unsigned scaling_factor);
 };
 }
