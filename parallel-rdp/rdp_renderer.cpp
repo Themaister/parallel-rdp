@@ -2140,7 +2140,6 @@ void Renderer::maintain_queues()
 	// If we haven't submitted anything in a while (1.0 ms), it's probably fine to submit again.
 	if (pending_render_passes >= ImplementationConstants::MaxPendingRenderPassesBeforeFlush ||
 	    pending_primitives >= Limits::MaxPrimitives ||
-	    pending_render_passes_upscaled > 0 ||
 	    active_submissions.load(std::memory_order_relaxed) == 0 ||
 	    int64_t(Util::get_current_time_nsecs() - last_submit_ns) > 1000000)
 	{
