@@ -113,8 +113,8 @@ struct SpanSetupMem
 	ivec4 rgba;
 	ivec4 stzw;
 
-	mem_i16x4 xleft;
-	mem_i16x4 xright;
+	mem_u16x4 xleft;
+	mem_u16x4 xright;
 
 	int interpolation_base_x;
 	int start_x;
@@ -130,8 +130,8 @@ struct SpanSetup
 	ivec4 rgba;
 	ivec4 stzw;
 
-	i16x4 xleft;
-	i16x4 xright;
+	u16x4 xleft;
+	u16x4 xright;
 
 	int interpolation_base_x;
 	int start_x;

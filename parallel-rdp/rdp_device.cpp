@@ -253,12 +253,15 @@ void CommandProcessor::decode_triangle_setup(TriangleSetup &setup, const uint32_
 	setup.yl = sext<14>(words[0]);
 	setup.ym = sext<14>(words[1] >> 16);
 	setup.yh = sext<14>(words[1]);
-	setup.xl = sext<28>(words[2]) & ~1;
-	setup.xh = sext<28>(words[4]) & ~1;
-	setup.xm = sext<28>(words[6]) & ~1;
-	setup.dxldy = sext<28>(words[3] >> 2) & ~1;
-	setup.dxhdy = sext<28>(words[5] >> 2) & ~1;
-	setup.dxmdy = sext<28>(words[7] >> 2) & ~1;
+
+	// The lower bit is ignored, so shift here to obtain an extra bit of subpixel precision.
+	// This is very useful for upscaling, since we can obtain 8x before we overflow instead of 4x.
+	setup.xl = sext<28>(words[2]) >> 1;
+	setup.xh = sext<28>(words[4]) >> 1;
+	setup.xm = sext<28>(words[6]) >> 1;
+	setup.dxldy = sext<28>(words[3] >> 2) >> 1;
+	setup.dxhdy = sext<28>(words[5] >> 2) >> 1;
+	setup.dxmdy = sext<28>(words[7] >> 2) >> 1;
 }
 
 static void decode_tex_setup(AttributeSetup &attr, const uint32_t *words)
@@ -689,9 +692,9 @@ void CommandProcessor::op_fill_rectangle(const uint32_t *words)
 		yl |= 3;
 
 	TriangleSetup setup = {};
-	setup.xh = xh << 14;
-	setup.xl = xl << 14;
-	setup.xm = xl << 14;
+	setup.xh = xh << 13;
+	setup.xl = xl << 13;
+	setup.xm = xl << 13;
 	setup.ym = yl;
 	setup.yl = yl;
 	setup.yh = yh;
@@ -721,9 +724,9 @@ void CommandProcessor::op_texture_rectangle(const uint32_t *words)
 	TriangleSetup setup = {};
 	AttributeSetup attr = {};
 
-	setup.xh = xh << 14;
-	setup.xl = xl << 14;
-	setup.xm = xl << 14;
+	setup.xh = xh << 13;
+	setup.xl = xl << 13;
+	setup.xm = xl << 13;
 	setup.ym = yl;
 	setup.yl = yl;
 	setup.yh = yh;
@@ -765,9 +768,9 @@ void CommandProcessor::op_texture_rectangle_flip(const uint32_t *words)
 	TriangleSetup setup = {};
 	AttributeSetup attr = {};
 
-	setup.xh = xh << 14;
-	setup.xl = xl << 14;
-	setup.xm = xl << 14;
+	setup.xh = xh << 13;
+	setup.xl = xl << 13;
+	setup.xm = xl << 13;
 	setup.ym = yl;
 	setup.yl = yl;
 	setup.yh = yh;

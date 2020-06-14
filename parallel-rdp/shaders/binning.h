@@ -29,7 +29,7 @@ const int SUBPIXELS_Y = 4;
 
 ivec4 quantize_x(ivec4 x)
 {
-	return x >> 16;
+	return x >> 15;
 }
 
 int minimum4(ivec4 v)

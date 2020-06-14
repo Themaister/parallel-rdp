@@ -934,8 +934,8 @@ static std::pair<int, int> interpolate_x(const TriangleSetup &setup, int y, bool
 	if (y < scaling * setup.ym)
 		xl = xm;
 
-	int xh_shifted = xh >> 16;
-	int xl_shifted = xl >> 16;
+	int xh_shifted = xh >> 15;
+	int xl_shifted = xl >> 15;
 
 	int xleft, xright;
 	if (flip)
