@@ -43,8 +43,8 @@ namespace RDP
 {
 CommandProcessor::CommandProcessor(Vulkan::Device &device_, void *rdram_ptr,
                                    size_t rdram_offset_, size_t rdram_size_, size_t hidden_rdram_size,
-                                   CommandProcessorFlags flags)
-	: device(device_), rdram_offset(rdram_offset_), rdram_size(rdram_size_), renderer(*this),
+                                   CommandProcessorFlags flags_)
+	: device(device_), rdram_offset(rdram_offset_), rdram_size(rdram_size_), flags(flags_), renderer(*this),
 #ifdef PARALLEL_RDP_SHADER_DIR
 	  timeline_worker(Granite::Global::create_thread_context(), FenceExecutor{&device, &thread_timeline_value})
 #else
@@ -165,13 +165,19 @@ void CommandProcessor::init_renderer()
 	renderer.set_hidden_rdram(hidden_rdram.get());
 	renderer.set_tmem(tmem.get());
 
-	RendererOptions opts;
-	if (const char *env = getenv("PARALLEL_RDP_UPSCALING"))
-	{
-		unsigned factor = strtoul(env, nullptr, 0);
+	unsigned factor = 1;
+	if (flags & COMMAND_PROCESSOR_FLAG_UPSCALING_8X_BIT)
+		factor = 8;
+	else if (flags & COMMAND_PROCESSOR_FLAG_UPSCALING_4X_BIT)
+		factor = 4;
+	else if (flags & COMMAND_PROCESSOR_FLAG_UPSCALING_2X_BIT)
+		factor = 2;
+
+	if (factor != 1)
 		LOGI("Enabling upscaling: %ux.\n", factor);
-		opts.upscaling_factor = factor;
-	}
+
+	RendererOptions opts;
+	opts.upscaling_factor = factor;
 
 	is_supported = renderer.init_renderer(opts);
 
@@ -230,8 +236,9 @@ void CommandProcessor::op_sync_full(const uint32_t *)
 	renderer.flush_and_signal();
 }
 
-static void decode_triangle_setup(TriangleSetup &setup, const uint32_t *words, bool copy_cycle)
+void CommandProcessor::decode_triangle_setup(TriangleSetup &setup, const uint32_t *words) const
 {
+	bool copy_cycle = (static_state.flags & RASTERIZATION_COPY_BIT) != 0;
 	bool flip = (words[0] & 0x800000u) != 0;
 	bool sign_dxhdy = (words[5] & 0x80000000u) != 0;
 	bool do_offset = flip == sign_dxhdy;
@@ -239,6 +246,8 @@ static void decode_triangle_setup(TriangleSetup &setup, const uint32_t *words, b
 	setup.flags |= flip ? TRIANGLE_SETUP_FLIP_BIT : 0;
 	setup.flags |= do_offset ? TRIANGLE_SETUP_DO_OFFSET_BIT : 0;
 	setup.flags |= copy_cycle ? TRIANGLE_SETUP_SKIP_XFRAC_BIT : 0;
+	setup.flags |= quirks.u.options.native_texture_lod ? TRIANGLE_SETUP_NATIVE_LOD_BIT : 0;
+
 	setup.tile = (words[0] >> 16) & 63;
 
 	setup.yl = sext<14>(words[0]);
@@ -305,7 +314,7 @@ static void decode_z_setup(AttributeSetup &attr, const uint32_t *words)
 void CommandProcessor::op_fill_triangle(const uint32_t *words)
 {
 	TriangleSetup setup = {};
-	decode_triangle_setup(setup, words, (static_state.flags & RASTERIZATION_COPY_BIT) != 0);
+	decode_triangle_setup(setup, words);
 	renderer.draw_flat_primitive(setup);
 }
 
@@ -313,7 +322,7 @@ void CommandProcessor::op_shade_triangle(const uint32_t *words)
 {
 	TriangleSetup setup = {};
 	AttributeSetup attr = {};
-	decode_triangle_setup(setup, words, (static_state.flags & RASTERIZATION_COPY_BIT) != 0);
+	decode_triangle_setup(setup, words);
 	decode_rgba_setup(attr, words + 8);
 	renderer.draw_shaded_primitive(setup, attr);
 }
@@ -322,7 +331,7 @@ void CommandProcessor::op_shade_z_buffer_triangle(const uint32_t *words)
 {
 	TriangleSetup setup = {};
 	AttributeSetup attr = {};
-	decode_triangle_setup(setup, words, (static_state.flags & RASTERIZATION_COPY_BIT) != 0);
+	decode_triangle_setup(setup, words);
 	decode_rgba_setup(attr, words + 8);
 	decode_z_setup(attr, words + 24);
 	renderer.draw_shaded_primitive(setup, attr);
@@ -332,7 +341,7 @@ void CommandProcessor::op_shade_texture_z_buffer_triangle(const uint32_t *words)
 {
 	TriangleSetup setup = {};
 	AttributeSetup attr = {};
-	decode_triangle_setup(setup, words, (static_state.flags & RASTERIZATION_COPY_BIT) != 0);
+	decode_triangle_setup(setup, words);
 	decode_rgba_setup(attr, words + 8);
 	decode_tex_setup(attr, words + 24);
 	decode_z_setup(attr, words + 40);
@@ -343,7 +352,7 @@ void CommandProcessor::op_fill_z_buffer_triangle(const uint32_t *words)
 {
 	TriangleSetup setup = {};
 	AttributeSetup attr = {};
-	decode_triangle_setup(setup, words, (static_state.flags & RASTERIZATION_COPY_BIT) != 0);
+	decode_triangle_setup(setup, words);
 	decode_z_setup(attr, words + 8);
 	renderer.draw_shaded_primitive(setup, attr);
 }
@@ -352,7 +361,7 @@ void CommandProcessor::op_texture_triangle(const uint32_t *words)
 {
 	TriangleSetup setup = {};
 	AttributeSetup attr = {};
-	decode_triangle_setup(setup, words, (static_state.flags & RASTERIZATION_COPY_BIT) != 0);
+	decode_triangle_setup(setup, words);
 	decode_tex_setup(attr, words + 8);
 	renderer.draw_shaded_primitive(setup, attr);
 }
@@ -361,7 +370,7 @@ void CommandProcessor::op_texture_z_buffer_triangle(const uint32_t *words)
 {
 	TriangleSetup setup = {};
 	AttributeSetup attr = {};
-	decode_triangle_setup(setup, words, (static_state.flags & RASTERIZATION_COPY_BIT) != 0);
+	decode_triangle_setup(setup, words);
 	decode_tex_setup(attr, words + 8);
 	decode_z_setup(attr, words + 24);
 	renderer.draw_shaded_primitive(setup, attr);
@@ -371,7 +380,7 @@ void CommandProcessor::op_shade_texture_triangle(const uint32_t *words)
 {
 	TriangleSetup setup = {};
 	AttributeSetup attr = {};
-	decode_triangle_setup(setup, words, (static_state.flags & RASTERIZATION_COPY_BIT) != 0);
+	decode_triangle_setup(setup, words);
 	decode_rgba_setup(attr, words + 8);
 	decode_tex_setup(attr, words + 24);
 	renderer.draw_shaded_primitive(setup, attr);
@@ -718,7 +727,9 @@ void CommandProcessor::op_texture_rectangle(const uint32_t *words)
 	setup.ym = yl;
 	setup.yl = yl;
 	setup.yh = yh;
-	setup.flags = TRIANGLE_SETUP_FLIP_BIT | TRIANGLE_SETUP_DISABLE_UPSCALING_BIT;
+	setup.flags = TRIANGLE_SETUP_FLIP_BIT |
+	              (quirks.u.options.native_resolution_tex_rect ? TRIANGLE_SETUP_DISABLE_UPSCALING_BIT : 0) |
+	              (quirks.u.options.native_texture_lod ? TRIANGLE_SETUP_NATIVE_LOD_BIT : 0);
 	setup.tile = tile;
 
 	attr.s = s << 16;
@@ -760,7 +771,9 @@ void CommandProcessor::op_texture_rectangle_flip(const uint32_t *words)
 	setup.ym = yl;
 	setup.yl = yl;
 	setup.yh = yh;
-	setup.flags = TRIANGLE_SETUP_FLIP_BIT | TRIANGLE_SETUP_DISABLE_UPSCALING_BIT;
+	setup.flags = TRIANGLE_SETUP_FLIP_BIT | TRIANGLE_SETUP_DISABLE_UPSCALING_BIT |
+	              (quirks.u.options.native_resolution_tex_rect ? TRIANGLE_SETUP_DISABLE_UPSCALING_BIT : 0) |
+	              (quirks.u.options.native_texture_lod ? TRIANGLE_SETUP_NATIVE_LOD_BIT : 0);
 	setup.tile = tile;
 
 	attr.s = s << 16;
@@ -826,7 +839,7 @@ void CommandProcessor::enqueue_command(unsigned num_words, const uint32_t *words
 		ring.enqueue_command(num_words, words);
 }
 
-void CommandProcessor::enqueue_command_direct(unsigned num_words, const uint32_t *words)
+void CommandProcessor::enqueue_command_direct(unsigned, const uint32_t *words)
 {
 #define OP(x) &CommandProcessor::op_##x
 	using CommandFunc = void (CommandProcessor::*)(const uint32_t *words);
@@ -875,11 +888,26 @@ void CommandProcessor::enqueue_command_direct(unsigned num_words, const uint32_t
 		break;
 	}
 
+	case Op::MetaSetQuirks:
+	{
+		quirks.u.words[0] = words[1];
+		break;
+	}
+
 	default:
 		if (funcs[op])
 			(this->*funcs[op])(words);
 		break;
 	}
+}
+
+void CommandProcessor::set_quirks(const Quirks &quirks_)
+{
+	const uint32_t words[2] = {
+		uint32_t(Op::MetaSetQuirks) << 24u,
+		quirks_.u.words[0],
+	};
+	enqueue_command(2, words);
 }
 
 void CommandProcessor::set_vi_register(VIRegister reg, uint32_t value)

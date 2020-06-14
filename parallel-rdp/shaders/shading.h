@@ -189,8 +189,14 @@ bool shade_pixel(int x, int y, uint primitive_index, out ShadedData shaded)
 	ivec2 st, st_dx, st_dy;
 	int z;
 	bool perspective_overflow = false;
+
+	int tex_interpolation_direction = interpolation_direction;
+	if (SCALING_FACTOR > 1 && uses_lod)
+		if ((setup_flags & TRIANGLE_SETUP_NATIVE_LOD_BIT) != 0)
+			tex_interpolation_direction *= SCALING_FACTOR;
+
 	interpolate_stz(span_setup.stzw, attr.dstzw_dx, attr.dstzw_dy, dx, coverage, perspective, uses_lod,
-	                interpolation_direction, st, st_dx, st_dy, z, perspective_overflow);
+	                tex_interpolation_direction, st, st_dx, st_dy, z, perspective_overflow);
 
 	// Sample textures.
 	uint tile0 = uint(setup_tile) & 7u;

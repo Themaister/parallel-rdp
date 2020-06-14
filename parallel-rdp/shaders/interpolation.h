@@ -101,7 +101,10 @@ void interpolate_stz(ivec4 stzw, ivec4 dstzw_dx, ivec4 dstzw_dy, int dx, int cov
 	if (uses_lod)
 	{
 		stw_dx = stw + flip_direction * ((dstzw_dx.xyw & ~0x1f) >> SCALING_LOG2);
-		stw_dy = stw + ((dstzw_dy.xyw & ~0x7fff) >> SCALING_LOG2);
+		if (SCALING_FACTOR > 1)
+			stw_dy = stw + abs(flip_direction) * ((dstzw_dy.xyw & ~0x7fff) >> SCALING_LOG2);
+		else
+			stw_dy = stw + ((dstzw_dy.xyw & ~0x7fff) >> SCALING_LOG2);
 	}
 
 	if (perspective)
