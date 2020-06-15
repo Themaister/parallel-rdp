@@ -1045,7 +1045,8 @@ void CommandProcessor::scanout_sync(std::vector<RGBA> &colors, unsigned &width, 
 	}
 
 	ScanoutOptions opts = {};
-	opts.downscale = true;
+	// Downscale down to 1x, always.
+	opts.downscale_steps = 32;
 
 	auto handle = vi.scanout(VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, opts, renderer.get_scaling_factor());
 

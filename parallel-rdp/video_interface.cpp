@@ -766,29 +766,49 @@ Vulkan::ImageHandle VideoInterface::crop_stage(Vulkan::CommandBuffer &cmd, Vulka
 }
 
 Vulkan::ImageHandle VideoInterface::downscale_stage(Vulkan::CommandBuffer &cmd, Vulkan::Image &scale_image,
-                                                    unsigned scaling_factor) const
+                                                    unsigned scaling_factor, unsigned downscale_steps) const
 {
 	Vulkan::ImageHandle downscale_image;
-	unsigned width = scale_image.get_width();
-	unsigned height = scale_image.get_height();
+	const Vulkan::Image *input = &scale_image;
+	Vulkan::ImageHandle holder;
 
-	Vulkan::ImageCreateInfo rt_info = Vulkan::ImageCreateInfo::render_target(
-			width / scaling_factor, height / scaling_factor,
-			VK_FORMAT_R8G8B8A8_UNORM);
+	while (scaling_factor > 1 && downscale_steps)
+	{
+		if (input != &scale_image)
+		{
+			cmd.image_barrier(*input, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			                  VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+			                  VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+			                  VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT);
+		}
 
-	rt_info.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-	rt_info.initial_layout = VK_IMAGE_LAYOUT_UNDEFINED;
-	rt_info.misc = Vulkan::IMAGE_MISC_MUTABLE_SRGB_BIT;
-	downscale_image = device->create_image(rt_info);
+		unsigned width = input->get_width();
+		unsigned height = input->get_height();
 
-	cmd.image_barrier(*downscale_image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-	                  VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0,
-	                  VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT);
+		Vulkan::ImageCreateInfo rt_info = Vulkan::ImageCreateInfo::render_target(
+				width / 2, height / 2,
+				VK_FORMAT_R8G8B8A8_UNORM);
 
-	cmd.blit_image(*downscale_image, scale_image,
-	               {}, { int(rt_info.width), int(rt_info.height), 1 },
-	               {}, { int(width), int(height), 1 },
-	               0, 0);
+		rt_info.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+		rt_info.initial_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+		rt_info.misc = Vulkan::IMAGE_MISC_MUTABLE_SRGB_BIT;
+		downscale_image = device->create_image(rt_info);
+
+		cmd.image_barrier(*downscale_image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		                  VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0,
+		                  VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT);
+
+		cmd.blit_image(*downscale_image, *input,
+		               {}, {int(rt_info.width), int(rt_info.height), 1},
+		               {}, {int(width), int(height), 1},
+		               0, 0);
+
+		input = downscale_image.get();
+		holder = downscale_image;
+
+		scaling_factor /= 2;
+		downscale_steps--;
+	}
 
 	return downscale_image;
 }
@@ -943,13 +963,13 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const S
 		prev_scanout_image = scale_image;
 	}
 
-	if (options.downscale && scaling_factor > 1)
+	if (options.downscale_steps && scaling_factor > 1)
 	{
 		cmd->image_barrier(*scale_image, src_layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
 		                   layout_to_stage(src_layout), layout_to_access(src_layout),
 		                   VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT);
 
-		scale_image = downscale_stage(*cmd, *scale_image, scaling_factor);
+		scale_image = downscale_stage(*cmd, *scale_image, scaling_factor, options.downscale_steps);
 
 		cmd->image_barrier(*scale_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, target_layout,
 		                   VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
