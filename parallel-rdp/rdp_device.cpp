@@ -116,12 +116,6 @@ CommandProcessor::CommandProcessor(Vulkan::Device &device_, void *rdram_ptr,
 	clear_tmem();
 	init_renderer();
 
-	ring.init(
-#ifdef PARALLEL_RDP_SHADER_DIR
-			Granite::Global::create_thread_context(),
-#endif
-			this, 4 * 1024);
-
 	if (const char *env = getenv("PARALLEL_RDP_BENCH"))
 	{
 		measure_stall_time = strtol(env, nullptr, 0) > 0;
@@ -134,6 +128,15 @@ CommandProcessor::CommandProcessor(Vulkan::Device &device_, void *rdram_ptr,
 		single_threaded_processing = strtol(env, nullptr, 0) > 0;
 		if (single_threaded_processing)
 			LOGI("Will use single threaded command processing.\n");
+	}
+
+	if (!single_threaded_processing)
+	{
+		ring.init(
+#ifdef PARALLEL_RDP_SHADER_DIR
+				Granite::Global::create_thread_context(),
+#endif
+				this, 4 * 1024);
 	}
 
 	if (const char *env = getenv("PARALLEL_RDP_BENCH"))
