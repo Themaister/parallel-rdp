@@ -2140,6 +2140,7 @@ void Renderer::maintain_queues()
 	// If we haven't submitted anything in a while (1.0 ms), it's probably fine to submit again.
 	if (pending_render_passes >= ImplementationConstants::MaxPendingRenderPassesBeforeFlush ||
 	    pending_primitives >= Limits::MaxPrimitives ||
+	    pending_primitives_upscaled >= Limits::MaxPrimitives ||
 	    active_submissions.load(std::memory_order_relaxed) == 0 ||
 	    int64_t(Util::get_current_time_nsecs() - last_submit_ns) > 1000000)
 	{
@@ -2174,6 +2175,7 @@ void Renderer::submit_to_queue()
 	pending_render_passes = 0;
 	pending_render_passes_upscaled = 0;
 	pending_primitives = 0;
+	pending_primitives_upscaled = 0;
 
 	if (!stream.cmd)
 	{
@@ -2718,6 +2720,7 @@ void Renderer::flush_queues()
 		ensure_command_buffer();
 		submit_render_pass_upscaled(*stream.cmd);
 		pending_render_passes_upscaled++;
+		pending_primitives_upscaled += uint32_t(stream.triangle_setup.size());
 	}
 
 	submit_render_pass_end(*stream.cmd);

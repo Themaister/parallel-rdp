@@ -286,6 +286,7 @@ private:
 	unsigned pending_render_passes = 0;
 	unsigned pending_render_passes_upscaled = 0;
 	unsigned pending_primitives = 0;
+	unsigned pending_primitives_upscaled = 0;
 
 	bool tmem_upload_needs_flush(uint32_t addr) const;
 
