@@ -965,6 +965,7 @@ void *CommandProcessor::get_tmem()
 
 void CommandProcessor::idle()
 {
+	flush();
 	wait_for_timeline(signal_timeline());
 }
 
