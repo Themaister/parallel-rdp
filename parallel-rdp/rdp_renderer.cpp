@@ -2170,6 +2170,7 @@ void Renderer::enqueue_fence_wait(Vulkan::Fence fence)
 void Renderer::submit_to_queue()
 {
 	bool pending_host_visible_render_passes = pending_render_passes != 0;
+	bool pending_upscaled_passes = pending_render_passes_upscaled != 0;
 	pending_render_passes = 0;
 	pending_render_passes_upscaled = 0;
 	pending_primitives = 0;
@@ -2187,8 +2188,11 @@ void Renderer::submit_to_queue()
 
 	bool need_host_barrier = is_host_coherent || !incoherent.staging_readback;
 
-	// Only need execution barrier here for compute since memory is already flushed.
-	stream.cmd->barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0,
+	// If we maintain queues in-between doing 1x render pass and upscaled render pass,
+	// we haven't flushed memory yet.
+	bool need_memory_flush = pending_host_visible_render_passes && !pending_upscaled_passes;
+	stream.cmd->barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+	                    need_memory_flush ? VK_ACCESS_MEMORY_WRITE_BIT : 0,
 	                    (need_host_barrier ? VK_PIPELINE_STAGE_HOST_BIT : VK_PIPELINE_STAGE_TRANSFER_BIT),
 	                    (need_host_barrier ? VK_ACCESS_HOST_READ_BIT : VK_ACCESS_TRANSFER_READ_BIT));
 
