@@ -2742,6 +2742,9 @@ void Renderer::flush_queues()
 	{
 		maintain_queues();
 		ensure_command_buffer();
+		// We're going to keep reading the same data structures, so make sure
+		// we signal fence after upscaled render pass is submitted.
+		sync_indices_needs_flush |= 1u << buffer_instance;
 		submit_render_pass_upscaled(*stream.cmd);
 		pending_render_passes_upscaled++;
 		pending_primitives_upscaled += uint32_t(stream.triangle_setup.size());
