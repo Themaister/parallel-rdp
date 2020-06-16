@@ -1010,14 +1010,19 @@ Vulkan::ImageHandle CommandProcessor::scanout(const ScanoutOptions &opts)
 {
 	Vulkan::QueryPoolHandle start_ts, end_ts;
 	drain_command_ring();
-	renderer.flush_and_signal();
 
-	if (!is_host_coherent)
+	// Block idle callbacks triggering while we're doing this.
+	renderer.lock_command_processing();
 	{
-		unsigned offset, length;
-		vi.scanout_memory_range(offset, length);
-		renderer.resolve_coherency_external(offset, length);
+		renderer.flush_and_signal();
+		if (!is_host_coherent)
+		{
+			unsigned offset, length;
+			vi.scanout_memory_range(offset, length);
+			renderer.resolve_coherency_external(offset, length);
+		}
 	}
+	renderer.unlock_command_processing();
 
 	auto scanout = vi.scanout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, opts, renderer.get_scaling_factor());
 	return scanout;
