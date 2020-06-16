@@ -640,6 +640,7 @@ void Renderer::flush_and_signal()
 {
 	flush_queues();
 	submit_to_queue();
+	assert(!stream.cmd);
 }
 
 void Renderer::set_color_framebuffer(uint32_t addr, uint32_t width, FBFormat fmt)
