@@ -813,8 +813,10 @@ Vulkan::ImageHandle VideoInterface::upscale_deinterlace(Vulkan::CommandBuffer &c
                                                         unsigned scaling_factor, bool field_select) const
 {
 	Vulkan::ImageHandle deinterlaced_image;
+
+	// If we're running upscaled, upscaling Y further is somewhat meaningless and bandwidth intensive.
 	Vulkan::ImageCreateInfo rt_info = Vulkan::ImageCreateInfo::render_target(
-			scale_image.get_width(), scale_image.get_height() * 2,
+			scale_image.get_width(), scale_image.get_height() * (scaling_factor == 1 ? 2 : 1),
 			VK_FORMAT_R8G8B8A8_UNORM);
 
 	rt_info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
