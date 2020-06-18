@@ -30,9 +30,9 @@ namespace RDP
 {
 struct ScanoutOptions
 {
-	bool crop_overscan = false;
-	bool persist_frame_on_invalid_input = false;
+	unsigned crop_overscan_pixels = 0;
 	unsigned downscale_steps = 0;
+	bool persist_frame_on_invalid_input = false;
 
 	struct
 	{
@@ -124,8 +124,7 @@ private:
 	                                Vulkan::Image &divot_image,
 	                                Registers registers,
 	                                unsigned scaling_factor,
-	                                bool degenerate, bool &can_crop,
-	                                VkRect2D &crop_rect) const;
+	                                bool degenerate, unsigned crop_pixels) const;
 	Vulkan::ImageHandle crop_stage(Vulkan::CommandBuffer &cmd,
 	                               Vulkan::Image &scale_image,
 	                               const VkRect2D &crop_rect) const;

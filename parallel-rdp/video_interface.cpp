@@ -558,7 +558,7 @@ Vulkan::ImageHandle VideoInterface::divot_stage(Vulkan::CommandBuffer &cmd, Vulk
 
 Vulkan::ImageHandle VideoInterface::scale_stage(Vulkan::CommandBuffer &cmd, Vulkan::Image &divot_image,
                                                 Registers regs, unsigned scaling_factor, bool degenerate,
-                                                bool &can_crop, VkRect2D &crop_rect) const
+                                                unsigned crop_pixels) const
 {
 	Vulkan::ImageHandle scale_image;
 	Vulkan::QueryPoolHandle start_ts, end_ts;
@@ -566,10 +566,16 @@ Vulkan::ImageHandle VideoInterface::scale_stage(Vulkan::CommandBuffer &cmd, Vulk
 	bool serrate = (regs.status & VI_CONTROL_SERRATE_BIT) != 0;
 	bool field_state = regs.v_current_line == 0;
 
+	crop_pixels *= scaling_factor;
+
 	Vulkan::ImageCreateInfo rt_info = Vulkan::ImageCreateInfo::render_target(
 			VI_SCANOUT_WIDTH * scaling_factor,
 			((regs.is_pal ? VI_V_RES_PAL: VI_V_RES_NTSC) >> int(!serrate)) * scaling_factor,
 			VK_FORMAT_R8G8B8A8_UNORM);
+
+	unsigned guard_band_pixels = 2 * crop_pixels;
+	rt_info.width -= guard_band_pixels;
+	rt_info.height -= guard_band_pixels;
 
 	rt_info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 	rt_info.initial_layout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -631,8 +637,8 @@ Vulkan::ImageHandle VideoInterface::scale_stage(Vulkan::CommandBuffer &cmd, Vulk
 
 	push.x_offset = regs.x_start;
 	push.y_offset = regs.y_start;
-	push.h_offset = regs.h_start;
-	push.v_offset = regs.v_start;
+	push.h_offset = int(crop_pixels) - regs.h_start;
+	push.v_offset = int(crop_pixels) - regs.v_start;
 	push.x_add = regs.x_add;
 	push.y_add = regs.y_add;
 	push.frame_count = frame_count;
@@ -661,17 +667,33 @@ Vulkan::ImageHandle VideoInterface::scale_stage(Vulkan::CommandBuffer &cmd, Vulk
 
 	cmd.push_constants(&push, 0, sizeof(push));
 
-	if (!degenerate && regs.h_res > 0 && regs.v_res > 0)
+	if (!degenerate && regs.h_res > int(crop_pixels) && regs.v_res > int(crop_pixels))
 	{
-		cmd.set_texture(0, 0, divot_image.get_view());
-		cmd.set_scissor({{ regs.h_start, regs.v_start }, { uint32_t(regs.h_res), uint32_t(regs.v_res) }});
-		cmd.draw(3);
+		VkRect2D rect = {{ regs.h_start, regs.v_start }, { uint32_t(regs.h_res), uint32_t(regs.v_res) }};
+		rect.offset.x -= crop_pixels;
+		rect.offset.y -= crop_pixels;
+		rect.extent.width -= guard_band_pixels;
+		rect.extent.height -= guard_band_pixels;
 
-		can_crop = true;
-		crop_rect.offset.x = regs.h_start;
-		crop_rect.offset.y = regs.v_start;
-		crop_rect.extent.width = regs.h_res;
-		crop_rect.extent.height = regs.v_res;
+		if (rect.offset.x < 0)
+		{
+			rect.extent.width -= rect.offset.x;
+			rect.offset.x = 0;
+		}
+
+		if (rect.offset.y < 0)
+		{
+			rect.extent.height -= rect.offset.y;
+			rect.offset.y = 0;
+		}
+
+		// Check for signed overflow without relying on -fwrapv.
+		if (((rect.extent.width | rect.extent.height) & 0x80000000u) == 0u)
+		{
+			cmd.set_texture(0, 0, divot_image.get_view());
+			cmd.set_scissor(rect);
+			cmd.draw(3);
+		}
 	}
 
 	// To deal with interlacing and other "persistence effects", we blend in previous frame's result.
@@ -937,31 +959,13 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const S
 	else
 		divot_image = std::move(aa_image);
 
-	VkRect2D crop_rect = {};
-	bool can_crop = false;
-
 	// Scale pass
 	auto scale_image = scale_stage(*cmd, *divot_image,
-	                               regs, scaling_factor, degenerate,
-	                               can_crop, crop_rect);
+	                               regs, scaling_factor, degenerate, options.crop_overscan_pixels);
 
-	VkImageLayout src_layout;
-
-	// Need separate copy pass so we can keep a full reference frame around for interlacing, etc.
-	// TODO: Figure out if we can optimize this safely.
-	if (options.crop_overscan && can_crop)
-	{
-		prev_image_layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-		prev_scanout_image = scale_image;
-		scale_image = crop_stage(*cmd, *scale_image, crop_rect);
-		src_layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-	}
-	else
-	{
-		src_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-		prev_image_layout = target_layout;
-		prev_scanout_image = scale_image;
-	}
+	auto src_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	prev_image_layout = target_layout;
+	prev_scanout_image = scale_image;
 
 	if (options.downscale_steps && scaling_factor > 1)
 	{
