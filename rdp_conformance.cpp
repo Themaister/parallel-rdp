@@ -1427,6 +1427,19 @@ static int main_inner(int argc, char **argv)
 		return run_conformance_rasterization(state, args, variant);
 	}});
 
+	suites.push_back({ "interpolation-color-texture-2cycle-implicit-convert-factors", [](ReplayerState &state, const Arguments &args) -> bool {
+		RasterizationTestVariant variant = {};
+		variant.color = true;
+		variant.texture = true;
+		variant.texture_size = TextureSize::Bpp16;
+		variant.texture_format = TextureFormat::RGBA;
+		variant.cycle_type = CycleType::Cycle2;
+		variant.sample_quad = false;
+		variant.convert_one = false;
+		variant.bilerp1 = false;
+		return run_conformance_rasterization(state, args, variant);
+	}});
+
 	suites.push_back({ "interpolation-color-texture-yuv16-nearest", [](ReplayerState &state, const Arguments &args) -> bool {
 		RasterizationTestVariant variant = {};
 		variant.color = true;
