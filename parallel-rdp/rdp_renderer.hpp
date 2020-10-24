@@ -314,7 +314,7 @@ private:
 	void submit_rasterization(Vulkan::CommandBuffer &cmd, Vulkan::Buffer &tmem, bool upscaled);
 	void submit_depth_blend(Vulkan::CommandBuffer &cmd, Vulkan::Buffer &tmem, bool upscaled);
 
-	enum class ResolveStage { Pre, Post };
+	enum class ResolveStage { Pre, Post, SSAAResolve };
 	void submit_update_upscaled_domain(Vulkan::CommandBuffer &cmd, ResolveStage stage);
 	void submit_update_upscaled_domain(Vulkan::CommandBuffer &cmd, ResolveStage stage,
 	                                   unsigned addr, unsigned depth_addr, unsigned length, unsigned pixel_size_log2);

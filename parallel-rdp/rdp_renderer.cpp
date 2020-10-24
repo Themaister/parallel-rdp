@@ -1822,13 +1822,17 @@ void Renderer::submit_update_upscaled_domain(Vulkan::CommandBuffer &cmd, Resolve
 #ifdef PARALLEL_RDP_SHADER_DIR
 	if (stage == ResolveStage::Pre)
 		cmd.set_program("rdp://update_upscaled_domain_pre.comp");
-	else
+	else if (stage == ResolveStage::Post)
 		cmd.set_program("rdp://update_upscaled_domain_post.comp");
+	else
+		cmd.set_program("rdp://update_upscaled_domain_resolve.comp");
 #else
 	if (stage == ResolveStage::Pre)
 		cmd.set_program(shader_bank->update_upscaled_domain_pre);
-	else
+	else if (stage == ResolveStage::Post)
 		cmd.set_program(shader_bank->update_upscaled_domain_post);
+	else
+		cmd.set_program(shader_bank->update_upscaled_domain_resolve);
 #endif
 
 	// Ensure that we always process entire words, thus we avoid having to do weird swizzles,

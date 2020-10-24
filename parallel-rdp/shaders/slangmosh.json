@@ -115,6 +115,11 @@
 			"compute": true
 		},
 		{
+			"name": "update_upscaled_domain_resolve",
+			"path": "update_upscaled_domain_resolve.comp",
+			"compute": true
+		},
+		{
 			"name": "vi_deinterlace_vert",
 			"path": "vi_deinterlace.vert"
 		},
