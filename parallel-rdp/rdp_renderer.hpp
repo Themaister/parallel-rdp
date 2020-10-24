@@ -69,6 +69,7 @@ struct RendererOptions
 {
 	unsigned upscaling_factor = 1;
 	bool super_sampled_readback = false;
+	bool super_sampled_readback_dither = false;
 };
 
 class Renderer : public Vulkan::DebugChannelInterface
@@ -121,7 +122,7 @@ public:
 
 	void resolve_coherency_external(unsigned offset, unsigned length);
 	void submit_update_upscaled_domain_external(Vulkan::CommandBuffer &cmd,
-	                                            unsigned addr, unsigned length, unsigned pixel_size_log2);
+	                                            unsigned addr, unsigned pixels, unsigned pixel_size_log2);
 	unsigned get_scaling_factor() const;
 
 	const Vulkan::Buffer *get_upscaled_rdram_buffer() const;
@@ -318,7 +319,9 @@ private:
 	enum class ResolveStage { Pre, Post, SSAAResolve };
 	void submit_update_upscaled_domain(Vulkan::CommandBuffer &cmd, ResolveStage stage);
 	void submit_update_upscaled_domain(Vulkan::CommandBuffer &cmd, ResolveStage stage,
-	                                   unsigned addr, unsigned depth_addr, unsigned length, unsigned pixel_size_log2);
+	                                   unsigned addr, unsigned depth_addr,
+	                                   unsigned width, unsigned height,
+	                                   unsigned pixel_size_log2);
 
 	SpanInfoOffsets allocate_span_jobs(const TriangleSetup &setup);
 
@@ -351,6 +354,7 @@ private:
 		bool supports_small_integer_arithmetic = false;
 		bool subgroup_tile_binning = false;
 		bool super_sample_readback = false;
+		bool super_sample_readback_dither = false;
 		unsigned upscaling = 1;
 		unsigned max_num_tile_instances = Limits::MaxTileInstances;
 		unsigned max_tiles_x = ImplementationConstants::MaxTilesX;

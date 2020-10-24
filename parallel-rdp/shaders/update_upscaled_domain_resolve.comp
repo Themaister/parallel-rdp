@@ -33,10 +33,11 @@ const int RDRAM_MASK_32 = RDRAM_MASK_8 >> 2;
 layout(constant_id = 1) const int FB_SIZE_LOG2 = 0;
 layout(constant_id = 2) const bool COLOR_DEPTH_ALIAS = false;
 layout(constant_id = 4) const int NUM_SAMPLES = 1;
+layout(constant_id = 5) const bool DITHER = false;
 
 layout(push_constant) uniform Registers
 {
-    uint num_pixels, fb_addr, fb_depth_addr;
+    uint num_pixels, fb_addr, fb_depth_addr, width, height;
 } registers;
 
 layout(set = 0, binding = 0) writeonly buffer RDRAMSingleSampled8
@@ -92,6 +93,7 @@ layout(set = 0, binding = 4) readonly buffer RDRAMHiddenUpscaling
 void copy_rdram_8(uint index)
 {
     index &= RDRAM_MASK_8;
+    index ^= 3u;
 
     uint r = 0u;
     for (int i = 0; i < NUM_SAMPLES; i++)
@@ -118,9 +120,16 @@ uint encode_rgba5551(uvec4 color)
     return (color.r << 11u) | (color.g << 6u) | (color.b << 1u) | color.a;
 }
 
-void copy_rdram_16(uint index)
+const uint bayer_dither_lut[16] = uint[](
+    0, 4, 1, 5,
+    4, 0, 5, 1,
+    3, 7, 2, 6,
+    7, 3, 6, 2);
+
+void copy_rdram_16(uint index, uint x, uint y)
 {
     index &= RDRAM_MASK_16;
+    index ^= 1u;
 
     uvec4 rgba = uvec4(0u);
     for (int i = 0; i < NUM_SAMPLES; i++)
@@ -129,7 +138,15 @@ void copy_rdram_16(uint index)
         rgba += decode_rgba5551(real_word);
     }
 
-    rgba = (rgba + (NUM_SAMPLES >> 1)) / NUM_SAMPLES;
+    if (DITHER)
+    {
+        uint dither_value = bayer_dither_lut[(y & 3u) * 4u + (x & 3u)] * NUM_SAMPLES;
+        rgba = (8u * rgba + dither_value) / (8 * NUM_SAMPLES);
+    }
+    else
+    {
+        rgba = (rgba + (NUM_SAMPLES >> 1)) / NUM_SAMPLES;
+    }
 
     uint encoded = encode_rgba5551(rgba);
     vram16.elems[index] = uint16_t(encoded);
@@ -145,6 +162,7 @@ void copy_rdram_16_single_sample(uint index)
     // The first sample should overlap exactly with the single-sampled version.
     // Coverage clipping might slightly change the result, but shouldn't be different enough to break things.
     index &= RDRAM_MASK_16;
+    index ^= 1u;
     uint upscaled_word = uint(vram_upscaled16.elems[index]);
     vram16.elems[index] = uint16_t(upscaled_word);
     vram_reference16.elems[index] = uint16_t(upscaled_word);
@@ -185,10 +203,11 @@ void copy_rdram_32(uint index)
 
 void main()
 {
-    uint index = gl_GlobalInvocationID.x;
-    if (index >= registers.num_pixels)
+    uvec2 coord = gl_GlobalInvocationID.xy;
+    if (coord.x >= registers.width)
         return;
 
+    uint index = coord.y * registers.width + coord.x;
     uint depth_index = index + registers.fb_depth_addr;
     uint color_index = index + registers.fb_addr;
 
@@ -199,7 +218,7 @@ void main()
         break;
 
     case 1:
-        copy_rdram_16(color_index);
+        copy_rdram_16(color_index, coord.x, coord.y);
         break;
 
     case 2:

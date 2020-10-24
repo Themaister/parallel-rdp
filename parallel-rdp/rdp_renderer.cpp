@@ -532,6 +532,7 @@ bool Renderer::init_internal_upscaling_factor(const RendererOptions &options)
 
 	caps.upscaling = factor;
 	caps.super_sample_readback = options.super_sampled_readback;
+	caps.super_sample_readback_dither = options.super_sampled_readback_dither;
 
 	if (factor == 1)
 	{
@@ -1815,12 +1816,13 @@ void Renderer::submit_tile_binning_combined(Vulkan::CommandBuffer &cmd, bool ups
 void Renderer::submit_update_upscaled_domain_external(Vulkan::CommandBuffer &cmd,
                                                       unsigned addr, unsigned length, unsigned pixel_size_log2)
 {
-	submit_update_upscaled_domain(cmd, ResolveStage::Pre, addr, addr, length, pixel_size_log2);
+	submit_update_upscaled_domain(cmd, ResolveStage::Pre, addr, addr, length, 1, pixel_size_log2);
 }
 
 void Renderer::submit_update_upscaled_domain(Vulkan::CommandBuffer &cmd, ResolveStage stage,
                                              unsigned addr, unsigned depth_addr,
-                                             unsigned num_pixels, unsigned pixel_size_log2)
+                                             unsigned width, unsigned height,
+                                             unsigned pixel_size_log2)
 {
 #ifdef PARALLEL_RDP_SHADER_DIR
 	if (stage == ResolveStage::Pre)
@@ -1838,12 +1840,17 @@ void Renderer::submit_update_upscaled_domain(Vulkan::CommandBuffer &cmd, Resolve
 		cmd.set_program(shader_bank->update_upscaled_domain_resolve);
 #endif
 
-	// Ensure that we always process entire words, thus we avoid having to do weird swizzles,
-	// and memory access patterns are linear with gl_GlobalInvocationID.x.
-	addr &= ~3u;
-	depth_addr &= ~3u;
-	unsigned align_pixels = 4u >> pixel_size_log2;
-	num_pixels = (num_pixels + align_pixels - 1u) & ~(align_pixels - 1u);
+	unsigned num_pixels = width * height;
+
+	if (stage != ResolveStage::SSAAResolve)
+	{
+		// Ensure that we always process entire words, thus we avoid having to do weird swizzles,
+		// and memory access patterns are linear with gl_GlobalInvocationID.x.
+		addr &= ~3u;
+		depth_addr &= ~3u;
+		unsigned align_pixels = 4u >> pixel_size_log2;
+		num_pixels = (num_pixels + align_pixels - 1u) & ~(align_pixels - 1u);
+	}
 
 	cmd.set_storage_buffer(0, 0, *rdram, rdram_offset, rdram_size);
 	cmd.set_storage_buffer(0, 1, *hidden_rdram);
@@ -1851,33 +1858,50 @@ void Renderer::submit_update_upscaled_domain(Vulkan::CommandBuffer &cmd, Resolve
 	cmd.set_storage_buffer(0, 3, *upscaling_multisampled_rdram);
 	cmd.set_storage_buffer(0, 4, *upscaling_multisampled_hidden_rdram);
 
-	cmd.set_specialization_constant_mask(0x1f);
+	cmd.set_specialization_constant_mask(0x3f);
 	cmd.set_specialization_constant(0, uint32_t(rdram_size));
 	cmd.set_specialization_constant(1, pixel_size_log2);
 	cmd.set_specialization_constant(2, int(addr == depth_addr));
 	cmd.set_specialization_constant(3, ImplementationConstants::DefaultWorkgroupSize);
 	cmd.set_specialization_constant(4, caps.upscaling * caps.upscaling);
+	if (stage == ResolveStage::SSAAResolve)
+		cmd.set_specialization_constant(5, uint32_t(caps.super_sample_readback_dither));
 
-	unsigned num_workgroups =
-			(num_pixels + ImplementationConstants::DefaultWorkgroupSize - 1) /
-			ImplementationConstants::DefaultWorkgroupSize;
+	uint32_t num_workgroups_x, num_workgroups_y;
+
+	if (stage == ResolveStage::SSAAResolve)
+	{
+		num_workgroups_x =
+				(width + ImplementationConstants::DefaultWorkgroupSize - 1) /
+				ImplementationConstants::DefaultWorkgroupSize;
+		num_workgroups_y = height;
+	}
+	else
+	{
+		num_workgroups_x =
+				(num_pixels + ImplementationConstants::DefaultWorkgroupSize - 1) /
+				ImplementationConstants::DefaultWorkgroupSize;
+		num_workgroups_y = 1;
+	}
 
 	struct Push
 	{
 		uint32_t pixels;
 		uint32_t fb_addr, fb_depth_addr;
+		uint32_t width, height;
 	} push = {};
 	push.pixels = num_pixels;
 	push.fb_addr = addr >> pixel_size_log2;
 	push.fb_depth_addr = depth_addr >> 1;
+	push.width = width;
+	push.height = height;
 
 	cmd.push_constants(&push, 0, sizeof(push));
-	cmd.dispatch(num_workgroups, 1, 1);
+	cmd.dispatch(num_workgroups_x, num_workgroups_y, 1);
 }
 
 void Renderer::submit_update_upscaled_domain(Vulkan::CommandBuffer &cmd, ResolveStage stage)
 {
-	unsigned num_pixels = fb.width * fb.deduced_height;
 	unsigned pixel_size_log2;
 
 	switch (fb.fmt)
@@ -1896,7 +1920,8 @@ void Renderer::submit_update_upscaled_domain(Vulkan::CommandBuffer &cmd, Resolve
 		break;
 	}
 
-	submit_update_upscaled_domain(cmd, stage, fb.addr, fb.depth_addr, num_pixels, pixel_size_log2);
+	submit_update_upscaled_domain(cmd, stage, fb.addr, fb.depth_addr,
+	                              fb.width, fb.deduced_height, pixel_size_log2);
 }
 
 void Renderer::submit_depth_blend(Vulkan::CommandBuffer &cmd, Vulkan::Buffer &tmem, bool upscaled)
