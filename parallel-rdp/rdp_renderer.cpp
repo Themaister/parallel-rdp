@@ -1831,6 +1831,13 @@ void Renderer::submit_update_upscaled_domain(Vulkan::CommandBuffer &cmd, Resolve
 		cmd.set_program(shader_bank->update_upscaled_domain_post);
 #endif
 
+	// Ensure that we always process entire words, thus we avoid having to do weird swizzles,
+	// and memory access patterns are linear with gl_GlobalInvocationID.x.
+	addr &= ~3u;
+	depth_addr &= ~3u;
+	unsigned align_pixels = 4u >> pixel_size_log2;
+	num_pixels = (num_pixels + align_pixels - 1u) & ~(align_pixels - 1u);
+
 	cmd.set_storage_buffer(0, 0, *rdram, rdram_offset, rdram_size);
 	cmd.set_storage_buffer(0, 1, *hidden_rdram);
 	cmd.set_storage_buffer(0, 2, *upscaling_reference_rdram);
