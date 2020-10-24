@@ -54,6 +54,8 @@ bool Renderer::init_renderer(const RendererOptions &options)
 {
 	if (options.upscaling_factor == 0)
 		return false;
+	if (options.upscaling_factor == 1 && options.super_sampled_readback)
+		return false;
 
 	caps.max_width = options.upscaling_factor * Limits::MaxWidth;
 	caps.max_height = options.upscaling_factor * Limits::MaxHeight;
@@ -529,6 +531,7 @@ bool Renderer::init_internal_upscaling_factor(const RendererOptions &options)
 	}
 
 	caps.upscaling = factor;
+	caps.super_sample_readback = options.super_sampled_readback;
 
 	if (factor == 1)
 	{
@@ -2106,8 +2109,15 @@ void Renderer::submit_render_pass_upscaled(Vulkan::CommandBuffer &cmd)
 		start_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 
 	bool need_tmem_upload = !stream.tmem_upload_infos.empty();
+
 	submit_span_setup_jobs(cmd, true);
 	submit_tile_binning_combined(cmd, true);
+	if (caps.super_sample_readback)
+	{
+		submit_update_upscaled_domain(cmd, ResolveStage::Pre);
+		if (need_tmem_upload)
+			update_tmem_instances(cmd);
+	}
 
 	cmd.barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
 	            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
@@ -2127,6 +2137,17 @@ void Renderer::submit_render_pass_upscaled(Vulkan::CommandBuffer &cmd)
 	submit_depth_blend(cmd, need_tmem_upload ? *tmem_instances : *tmem, true);
 	if (!caps.ubershader)
 		clear_indirect_buffer(cmd);
+
+	if (caps.super_sample_readback)
+	{
+		cmd.begin_region("ssaa-resolve");
+		cmd.barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
+		            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+		            VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+
+		submit_update_upscaled_domain(cmd, ResolveStage::SSAAResolve);
+		cmd.end_region();
+	}
 
 	if (caps.timestamp >= 1)
 	{
@@ -2155,6 +2176,7 @@ void Renderer::maintain_queues()
 	// If we have no pending submissions, the GPU is idle and there is no reason not to submit.
 	// If we haven't submitted anything in a while (1.0 ms), it's probably fine to submit again.
 	if (pending_render_passes >= ImplementationConstants::MaxPendingRenderPassesBeforeFlush ||
+	    (caps.super_sample_readback && pending_render_passes_upscaled >= ImplementationConstants::MaxPendingRenderPassesBeforeFlush) ||
 	    pending_primitives >= Limits::MaxPrimitives ||
 	    pending_primitives_upscaled >= Limits::MaxPrimitives ||
 	    active_submissions.load(std::memory_order_relaxed) == 0 ||
@@ -2197,7 +2219,8 @@ void Renderer::enqueue_fence_wait(Vulkan::Fence fence)
 
 void Renderer::submit_to_queue()
 {
-	bool pending_host_visible_render_passes = pending_render_passes != 0;
+	bool pending_host_visible_render_passes =
+			(caps.super_sample_readback ? pending_render_passes_upscaled : pending_render_passes) != 0;
 	bool pending_upscaled_passes = pending_render_passes_upscaled != 0;
 	pending_render_passes = 0;
 	pending_render_passes_upscaled = 0;
@@ -2744,18 +2767,29 @@ void Renderer::flush_queues()
 		resolve_coherency_host_to_gpu(*stream.cmd);
 	instance.upload(*device, stream, *stream.cmd);
 
-	stream.cmd->begin_region("render-pass-1x");
-	submit_render_pass(*stream.cmd);
-	stream.cmd->end_region();
-	pending_render_passes++;
+	// If we have super-sampled readback, then this is meaningless.
+	bool has_single_sampled_render_pass = !caps.super_sample_readback;
+
+	if (has_single_sampled_render_pass)
+	{
+		stream.cmd->begin_region("render-pass-1x");
+		submit_render_pass(*stream.cmd);
+		stream.cmd->end_region();
+		pending_render_passes++;
+	}
 
 	if (render_pass_is_upscaled())
 	{
-		maintain_queues();
-		ensure_command_buffer();
-		// We're going to keep reading the same data structures, so make sure
-		// we signal fence after upscaled render pass is submitted.
-		sync_indices_needs_flush |= 1u << buffer_instance;
+		if (has_single_sampled_render_pass)
+		{
+			maintain_queues();
+			ensure_command_buffer();
+
+			// We're going to keep reading the same data structures, so make sure
+			// we signal fence after upscaled render pass is submitted.
+			sync_indices_needs_flush |= 1u << buffer_instance;
+		}
+
 		submit_render_pass_upscaled(*stream.cmd);
 		pending_render_passes_upscaled++;
 		pending_primitives_upscaled += uint32_t(stream.triangle_setup.size());
@@ -2769,17 +2803,25 @@ void Renderer::flush_queues()
 
 bool Renderer::render_pass_is_upscaled() const
 {
+	if (caps.super_sample_readback)
+		return true;
+
 	bool need_render_pass = fb.width != 0 && fb.deduced_height != 0 && !stream.span_info_jobs.empty();
-	return caps.upscaling > 1 && need_render_pass && should_render_upscaled();
+	return need_render_pass && should_render_upscaled();
 }
 
 bool Renderer::should_render_upscaled() const
 {
-	// A heuristic. There is no point to render upscaled for purely off-screen passes.
-	// We should ideally only upscale the final pass which hits screen.
-	// From a heuristic point-of-view we expect only 16-bit/32-bit frame buffers to be relevant,
-	// and only frame buffers with at least 256 pixels.
-	return (fb.fmt == FBFormat::RGBA5551 || fb.fmt == FBFormat::RGBA8888) && fb.width >= 256;
+	if (caps.upscaling > 1)
+	{
+		// A heuristic. There is no point to render upscaled for purely off-screen passes.
+		// We should ideally only upscale the final pass which hits screen.
+		// From a heuristic point-of-view we expect only 16-bit/32-bit frame buffers to be relevant,
+		// and only frame buffers with at least 256 pixels.
+		return (fb.fmt == FBFormat::RGBA5551 || fb.fmt == FBFormat::RGBA8888) && fb.width >= 256;
+	}
+	else
+		return false;
 }
 
 void Renderer::ensure_command_buffer()

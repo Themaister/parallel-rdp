@@ -68,6 +68,7 @@ class CommandProcessor;
 struct RendererOptions
 {
 	unsigned upscaling_factor = 1;
+	bool super_sampled_readback = false;
 };
 
 class Renderer : public Vulkan::DebugChannelInterface
@@ -349,6 +350,7 @@ private:
 		bool ubershader = false;
 		bool supports_small_integer_arithmetic = false;
 		bool subgroup_tile_binning = false;
+		bool super_sample_readback = false;
 		unsigned upscaling = 1;
 		unsigned max_num_tile_instances = Limits::MaxTileInstances;
 		unsigned max_tiles_x = ImplementationConstants::MaxTilesX;
