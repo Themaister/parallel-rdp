@@ -314,7 +314,7 @@ private:
 	void submit_tile_binning_combined(Vulkan::CommandBuffer &cmd, bool upscaled);
 	void clear_indirect_buffer(Vulkan::CommandBuffer &cmd);
 	void submit_rasterization(Vulkan::CommandBuffer &cmd, Vulkan::Buffer &tmem, bool upscaled);
-	void submit_depth_blend(Vulkan::CommandBuffer &cmd, Vulkan::Buffer &tmem, bool upscaled);
+	void submit_depth_blend(Vulkan::CommandBuffer &cmd, Vulkan::Buffer &tmem, bool upscaled, bool force_write_mask);
 
 	enum class ResolveStage { Pre, Post, SSAAResolve };
 	void submit_update_upscaled_domain(Vulkan::CommandBuffer &cmd, ResolveStage stage);
@@ -322,6 +322,7 @@ private:
 	                                   unsigned addr, unsigned depth_addr,
 	                                   unsigned width, unsigned height,
 	                                   unsigned pixel_size_log2);
+	void submit_clear_super_sample_write_mask(Vulkan::CommandBuffer &cmd, unsigned width, unsigned height);
 
 	SpanInfoOffsets allocate_span_jobs(const TriangleSetup &setup);
 
@@ -353,6 +354,7 @@ private:
 		bool ubershader = false;
 		bool supports_small_integer_arithmetic = false;
 		bool subgroup_tile_binning = false;
+		bool subgroup_depth_blend = false;
 		bool super_sample_readback = false;
 		bool super_sample_readback_dither = false;
 		unsigned upscaling = 1;
