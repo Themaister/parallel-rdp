@@ -1917,7 +1917,16 @@ void Renderer::submit_update_upscaled_domain(Vulkan::CommandBuffer &cmd, Resolve
 	push.height = height;
 
 	cmd.push_constants(&push, 0, sizeof(push));
+
+	Vulkan::QueryPoolHandle start_ts, end_ts;
+	if (caps.timestamp >= 2 && stage == ResolveStage::SSAAResolve)
+		start_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 	cmd.dispatch(num_workgroups_x, num_workgroups_y, 1);
+	if (caps.timestamp >= 2 && stage == ResolveStage::SSAAResolve)
+	{
+		end_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+		device->register_time_interval("RDP GPU", std::move(start_ts), std::move(end_ts), "ssaa-resolve");
+	}
 }
 
 void Renderer::submit_clear_super_sample_write_mask(Vulkan::CommandBuffer &cmd, unsigned width, unsigned height)
