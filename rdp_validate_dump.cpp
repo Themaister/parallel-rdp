@@ -20,6 +20,7 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+#include "global_managers_init.hpp"
 #include "conformance_utils.hpp"
 #include "rdp_dump.hpp"
 #include "cli_parser.hpp"

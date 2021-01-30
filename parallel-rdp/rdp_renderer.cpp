@@ -71,8 +71,8 @@ bool Renderer::init_renderer(const RendererOptions &options)
 #endif
 
 #ifdef PARALLEL_RDP_SHADER_DIR
-	if (!Granite::Global::filesystem()->get_backend("rdp"))
-		Granite::Global::filesystem()->register_protocol("rdp", std::make_unique<Granite::OSFilesystem>(PARALLEL_RDP_SHADER_DIR));
+	if (!GRANITE_FILESYSTEM()->get_backend("rdp"))
+		GRANITE_FILESYSTEM()->register_protocol("rdp", std::make_unique<Granite::OSFilesystem>(PARALLEL_RDP_SHADER_DIR));
 	device->get_shader_manager().add_include_directory("builtin://shaders/inc");
 #endif
 

@@ -24,6 +24,7 @@
 #include "global_managers.hpp"
 #include "cli_parser.hpp"
 #include "application_cli_wrapper.hpp"
+#include "global_managers_init.hpp"
 
 using namespace RDP;
 
@@ -147,20 +148,20 @@ static bool run_conformance_vi(ReplayerState &state, const Arguments &args, cons
 
 static int main_inner(int argc, char **argv)
 {
-	Arguments args;
+	Arguments cli_args;
 	bool list_suites = false;
 
 	Util::CLICallbacks cbs;
 	cbs.add("--help", [](Util::CLIParser &parser) { print_help(); parser.end(); });
-	cbs.add("--suite-glob", [&](Util::CLIParser &parser) { args.suite_glob = parser.next_string(); });
-	cbs.add("--suite", [&](Util::CLIParser &parser) { args.suite = parser.next_string(); });
-	cbs.add("--verbose", [&](Util::CLIParser &) { args.verbose = true; });
+	cbs.add("--suite-glob", [&](Util::CLIParser &parser) { cli_args.suite_glob = parser.next_string(); });
+	cbs.add("--suite", [&](Util::CLIParser &parser) { cli_args.suite = parser.next_string(); });
+	cbs.add("--verbose", [&](Util::CLIParser &) { cli_args.verbose = true; });
 	cbs.add("--range", [&](Util::CLIParser &parser) {
-		args.lo = parser.next_uint();
-		args.hi = parser.next_uint();
+		cli_args.lo = parser.next_uint();
+		cli_args.hi = parser.next_uint();
 	});
 	cbs.add("--capture", [&](Util::CLIParser &) {
-		args.capture = Vulkan::Device::init_renderdoc_capture();
+		cli_args.capture = Vulkan::Device::init_renderdoc_capture();
 	});
 	cbs.add("--list-suites", [&](Util::CLIParser &) { list_suites = true; });
 	Util::CLIParser parser(std::move(cbs), argc - 1, argv + 1);
@@ -311,10 +312,10 @@ static int main_inner(int argc, char **argv)
 		for (auto &suite : suites)
 		{
 			bool cmp;
-			if (!args.suite.empty())
-				cmp = suite_compare(suite.name, args.suite);
+			if (!cli_args.suite.empty())
+				cmp = suite_compare(suite.name, cli_args.suite);
 			else
-				cmp = suite_compare_glob(suite.name, args.suite_glob);
+				cmp = suite_compare_glob(suite.name, cli_args.suite_glob);
 
 			if (cmp)
 			{
@@ -324,7 +325,7 @@ static int main_inner(int argc, char **argv)
 				LOGI("Running suite: %s\n", suite.name.c_str());
 				LOGI("------------------------------------------------\n");
 
-				if (!suite.func(state, args))
+				if (!suite.func(state, cli_args))
 				{
 					LOGE(" ... Suite failed.\n");
 					return EXIT_FAILURE;

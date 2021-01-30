@@ -823,7 +823,7 @@ void DebugApplication::render_frame(double, double)
 
 void DebugApplication::render_ui_vi_scanout(unsigned width, unsigned height)
 {
-	auto &font = Global::ui_manager()->get_font(UI::FontSize::Large);
+	auto &font = GRANITE_UI_MANAGER()->get_font(UI::FontSize::Large);
 
 	int x = 5, y = 5;
 	render_text_top_left_down(font, x, y, "Mode - VI scanout", vec3(1.0f));
@@ -837,9 +837,9 @@ void DebugApplication::render_ui_vi_scanout(unsigned width, unsigned height)
 
 void DebugApplication::render_ui_draw_calls(unsigned width, unsigned height)
 {
-	auto &large_font = Global::ui_manager()->get_font(UI::FontSize::Large);
-	auto &font = Global::ui_manager()->get_font(UI::FontSize::Normal);
-	auto &small_font = Global::ui_manager()->get_font(UI::FontSize::Small);
+	auto &large_font = GRANITE_UI_MANAGER()->get_font(UI::FontSize::Large);
+	auto &font = GRANITE_UI_MANAGER()->get_font(UI::FontSize::Normal);
+	auto &small_font = GRANITE_UI_MANAGER()->get_font(UI::FontSize::Small);
 
 	int x = width - 5;
 	int y = 5;
@@ -856,7 +856,7 @@ void DebugApplication::render_ui_draw_calls(unsigned width, unsigned height)
 
 void DebugApplication::render_ui_draw_call(unsigned width, unsigned height)
 {
-	auto &font = Global::ui_manager()->get_font(UI::FontSize::Large);
+	auto &font = GRANITE_UI_MANAGER()->get_font(UI::FontSize::Large);
 	int x = 5, y = 5;
 
 	switch (ui.vismode)
@@ -944,7 +944,7 @@ static vec3 message_type_to_color(MessageType type)
 
 void DebugApplication::render_ui_messages(unsigned width, unsigned height)
 {
-	auto &font = Global::ui_manager()->get_font(UI::FontSize::Normal);
+	auto &font = GRANITE_UI_MANAGER()->get_font(UI::FontSize::Normal);
 	int x = int(width) - 5, y = int(height) - 5;
 
 	unsigned message_count = 0;
@@ -967,7 +967,7 @@ void DebugApplication::render_ui_messages(unsigned width, unsigned height)
 
 void DebugApplication::render_ui_view_state(unsigned width, unsigned height)
 {
-	auto &font = Global::ui_manager()->get_font(UI::FontSize::Large);
+	auto &font = GRANITE_UI_MANAGER()->get_font(UI::FontSize::Large);
 	int x = 5, y = int(height) - 5;
 	auto rect = get_texture_rect();
 	auto msg = Util::join("View: ", "[(", rect.offset.x, ", ", rect.offset.y, ")", ", (", rect.size.x, ", ", rect.size.y, ")]");

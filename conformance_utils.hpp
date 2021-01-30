@@ -30,6 +30,7 @@
 #include "replayer_driver.hpp"
 #include "os_filesystem.hpp"
 #include "global_managers.hpp"
+#include "thread_group.hpp"
 #ifdef ANDROID
 #include "android.hpp"
 #endif
@@ -166,6 +167,12 @@ bool ReplayerState::init_common(Vulkan::Device *custom_device)
 			LOGE("Failed to init Vulkan loader.\n");
 			return false;
 		}
+
+		Vulkan::Context::SystemHandles handles;
+		handles.filesystem = GRANITE_FILESYSTEM();
+		handles.thread_group = GRANITE_THREAD_GROUP();
+		handles.timeline_trace_file = handles.thread_group->get_timeline_trace_file();
+		context.set_system_handles(handles);
 
 		if (!context.init_instance_and_device(nullptr, 0, nullptr, 0, Vulkan::CONTEXT_CREATION_DISABLE_BINDLESS_BIT))
 		{
@@ -377,7 +384,6 @@ static inline bool suite_compare(const std::string &suite, const std::string &cm
 static inline void setup_filesystems()
 {
 	using namespace Granite;
-	using namespace Granite::Global;
 	using namespace Granite::Path;
 
 #ifdef ANDROID
@@ -392,22 +398,22 @@ static inline void setup_filesystems()
 	bool use_exec_path_cache_dir = false;
 
 	FileStat s = {};
-	if (filesystem()->stat(rdp_dir, s) && s.type == PathType::Directory)
+	if (GRANITE_FILESYSTEM()->stat(rdp_dir, s) && s.type == PathType::Directory)
 	{
-		filesystem()->register_protocol("rdp", std::make_unique<OSFilesystem>(rdp_dir));
+		GRANITE_FILESYSTEM()->register_protocol("rdp", std::make_unique<OSFilesystem>(rdp_dir));
 		LOGI("Overriding RDP shader directory to %s.\n", rdp_dir.c_str());
 		use_exec_path_cache_dir = true;
 	}
 
-	if (filesystem()->stat(builtin_dir, s) && s.type == PathType::Directory)
+	if (GRANITE_FILESYSTEM()->stat(builtin_dir, s) && s.type == PathType::Directory)
 	{
-		filesystem()->register_protocol("builtin", std::make_unique<OSFilesystem>(builtin_dir));
+		GRANITE_FILESYSTEM()->register_protocol("builtin", std::make_unique<OSFilesystem>(builtin_dir));
 		LOGI("Overriding builtin shader directory to %s.\n", builtin_dir.c_str());
 		use_exec_path_cache_dir = true;
 	}
 
 	if (use_exec_path_cache_dir)
-		filesystem()->register_protocol("cache", std::make_unique<OSFilesystem>(cache_dir));
+		GRANITE_FILESYSTEM()->register_protocol("cache", std::make_unique<OSFilesystem>(cache_dir));
 #endif
 }
 }

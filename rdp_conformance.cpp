@@ -21,6 +21,7 @@
  */
 
 #include "application_cli_wrapper.hpp"
+#include "global_managers_init.hpp"
 #include "conformance_utils.hpp"
 #include "rdp_dump.hpp"
 #include "rdp_command_builder.hpp"
@@ -350,12 +351,12 @@ static bool run_conformance_rasterization(ReplayerState &state, const Arguments 
 	state.builder.set_enable_bilerp_cycle(0, variant.bilerp0);
 	state.builder.set_enable_bilerp_cycle(1, variant.bilerp1);
 
-	for (unsigned i = 0; i <= args.hi; i++)
+	for (unsigned index = 0; index <= args.hi; index++)
 	{
 		clear_rdram(*state.reference);
 		clear_rdram(*state.gpu);
 		state.builder.set_scissor_subpixels(19, 14, 1162, 801,
-		                                    variant.interlace, variant.interlace && bool(i & 1));
+		                                    variant.interlace, variant.interlace && bool(index & 1));
 
 		state.builder.set_fill_color(uint32_t(rng.rnd()));
 		state.builder.set_depth_write(variant.depth && (rng.rnd() & 1) != 0);
@@ -520,7 +521,7 @@ static bool run_conformance_rasterization(ReplayerState &state, const Arguments 
 
 		generate_random_input_primitive(rng, prim, variant.color, variant.depth, variant.force_flip);
 
-		if (i >= args.lo)
+		if (index >= args.lo)
 		{
 			if (args.capture)
 				state.device->begin_renderdoc_capture();
@@ -564,7 +565,7 @@ static bool run_conformance_rasterization(ReplayerState &state, const Arguments 
 
 			if (!compare_rdram(*state.reference, *state.gpu))
 			{
-				LOGE("Rasterization conformance failed in iteration %u!\n", i);
+				LOGE("Rasterization conformance failed in iteration %u!\n", index);
 				return false;
 			}
 
@@ -577,7 +578,7 @@ static bool run_conformance_rasterization(ReplayerState &state, const Arguments 
 		}
 
 		if (args.verbose)
-			LOGI("Iteration %u passed ...\n", i);
+			LOGI("Iteration %u passed ...\n", index);
 	}
 	return true;
 }
@@ -958,20 +959,20 @@ static void print_help()
 
 static int main_inner(int argc, char **argv)
 {
-	Arguments args;
+	Arguments cli_args;
 	bool list_suites = false;
 
 	Util::CLICallbacks cbs;
 	cbs.add("--help", [](Util::CLIParser &parser) { print_help(); parser.end(); });
-	cbs.add("--suite-glob", [&](Util::CLIParser &parser) { args.suite_glob = parser.next_string(); });
-	cbs.add("--suite", [&](Util::CLIParser &parser) { args.suite = parser.next_string(); });
-	cbs.add("--verbose", [&](Util::CLIParser &) { args.verbose = true; });
+	cbs.add("--suite-glob", [&](Util::CLIParser &parser) { cli_args.suite_glob = parser.next_string(); });
+	cbs.add("--suite", [&](Util::CLIParser &parser) { cli_args.suite = parser.next_string(); });
+	cbs.add("--verbose", [&](Util::CLIParser &) { cli_args.verbose = true; });
 	cbs.add("--range", [&](Util::CLIParser &parser) {
-		args.lo = parser.next_uint();
-		args.hi = parser.next_uint();
+		cli_args.lo = parser.next_uint();
+		cli_args.hi = parser.next_uint();
 	});
 	cbs.add("--capture", [&](Util::CLIParser &) {
-		args.capture = Vulkan::Device::init_renderdoc_capture();
+		cli_args.capture = Vulkan::Device::init_renderdoc_capture();
 	});
 	cbs.add("--list-suites", [&](Util::CLIParser &) { list_suites = true; });
 	Util::CLIParser parser(std::move(cbs), argc - 1, argv + 1);
@@ -1571,10 +1572,10 @@ static int main_inner(int argc, char **argv)
 		for (auto &suite : suites)
 		{
 			bool cmp;
-			if (!args.suite.empty())
-				cmp = suite_compare(suite.name, args.suite);
+			if (!cli_args.suite.empty())
+				cmp = suite_compare(suite.name, cli_args.suite);
 			else
-				cmp = suite_compare_glob(suite.name, args.suite_glob);
+				cmp = suite_compare_glob(suite.name, cli_args.suite_glob);
 
 			if (cmp)
 			{
@@ -1584,7 +1585,7 @@ static int main_inner(int argc, char **argv)
 				LOGI("Running suite: %s\n", suite.name.c_str());
 				LOGI("------------------------------------------------\n");
 
-				if (!suite.func(state, args))
+				if (!suite.func(state, cli_args))
 				{
 					LOGE(" ... Suite failed.\n");
 					return EXIT_FAILURE;

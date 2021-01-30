@@ -12,7 +12,7 @@ add_library(parallel-rdp STATIC
         command_ring.cpp command_ring.hpp
         worker_thread.hpp luts.hpp
         rdp_device.cpp rdp_device.hpp)
-target_link_libraries(parallel-rdp PRIVATE granite)
+target_link_libraries(parallel-rdp PUBLIC granite-vulkan granite-stb)
 target_compile_options(parallel-rdp PRIVATE ${PARALLEL_RDP_CXX_FLAGS})
 target_include_directories(parallel-rdp PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(parallel-rdp PUBLIC PARALLEL_RDP_SHADER_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/shaders\")

@@ -52,7 +52,7 @@ add_library(rdp-utils STATIC
         rdp_dump.cpp rdp_dump.hpp)
 target_include_directories(rdp-utils PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_options(rdp-utils PRIVATE ${RDP_REPLAYER_CXX_FLAGS})
-target_link_libraries(rdp-utils PUBLIC alp-core parallel-rdp PRIVATE granite)
+target_link_libraries(rdp-utils PUBLIC alp-core parallel-rdp PRIVATE granite-vulkan granite-util)
 
 add_granite_application(rdp-replayer rdp_replayer.cpp)
 target_link_libraries(rdp-replayer PRIVATE rdp-utils)
