@@ -1046,14 +1046,18 @@ void CommandProcessor::drain_command_ring()
 void CommandProcessor::scanout_sync(std::vector<RGBA> &colors, unsigned &width, unsigned &height)
 {
 	drain_command_ring();
-	renderer.flush_and_signal();
-
-	if (!is_host_coherent)
+	renderer.lock_command_processing();
 	{
-		unsigned offset, length;
-		vi.scanout_memory_range(offset, length);
-		renderer.resolve_coherency_external(offset, length);
+		renderer.flush_and_signal();
+
+		if (!is_host_coherent)
+		{
+			unsigned offset, length;
+			vi.scanout_memory_range(offset, length);
+			renderer.resolve_coherency_external(offset, length);
+		}
 	}
+	renderer.unlock_command_processing();
 
 	ScanoutOptions opts = {};
 	// Downscale down to 1x, always.
