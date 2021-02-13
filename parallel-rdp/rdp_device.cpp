@@ -192,7 +192,8 @@ void CommandProcessor::init_renderer()
 	vi.set_renderer(&renderer);
 
 #ifndef PARALLEL_RDP_SHADER_DIR
-	shader_bank.reset(new ShaderBank(device, [&](const char *name, const char *define) -> int {
+	Vulkan::ResourceLayout layout;
+	shader_bank.reset(new ShaderBank(device, layout, [&](const char *name, const char *define) -> int {
 		if (strncmp(name, "vi_", 3) == 0)
 			return vi.resolve_shader_define(name, define);
 		else
