@@ -33,6 +33,8 @@ class CommandBuilder : public CommandInterface
 public:
 	void set_viewport(const ViewportTransform &viewport);
 	unsigned draw_triangle(const InputPrimitive &prim);
+	// Tests edge cases when YM is out of range.
+	unsigned draw_triangle_ym_out_of_range(const InputPrimitive &prim, int ym_delta);
 	void fill_rectangle(uint16_t x, uint16_t y, uint16_t width, uint16_t height);
 	void fill_rectangle_subpixels(uint16_t x, uint16_t y, uint16_t width, uint16_t height);
 	void set_scissor(uint16_t x, uint16_t y, uint16_t width, uint16_t height, bool interlace = false, bool keepodd = false);

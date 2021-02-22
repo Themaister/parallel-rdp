@@ -110,6 +110,7 @@ add_rdp_test(fill-16)
 add_rdp_test(fill-16-interlace)
 add_rdp_test(fill-16-ia)
 add_rdp_test(fill-32)
+add_rdp_test(fill-ym-out-of-range)
 
 add_rdp_test(copy-4bpp-fb16-tlut)
 add_rdp_test(copy-8bpp-fb16-tlut)

@@ -158,6 +158,7 @@ struct RasterizationTestVariant
 	bool fill_rect;
 	bool tex_rect;
 	bool prim_depth;
+	bool ym_out_of_range;
 };
 
 static RGBMulAdd generate_random_input(RNG &rng, RGBMulAdd input)
@@ -521,6 +522,8 @@ static bool run_conformance_rasterization(ReplayerState &state, const Arguments 
 
 		generate_random_input_primitive(rng, prim, variant.color, variant.depth, variant.force_flip);
 
+		const auto generate_ym_offset = [&]() -> int { return int(rng.rnd() & 15) - 8; };
+
 		if (index >= args.lo)
 		{
 			if (args.capture)
@@ -528,6 +531,8 @@ static bool run_conformance_rasterization(ReplayerState &state, const Arguments 
 
 			for (unsigned j = 0; j < variant.primitive_count; j++)
 			{
+				int ym_offset = generate_ym_offset();
+
 				if (variant.fill_rect)
 				{
 					uint16_t x, y, width, height;
@@ -553,6 +558,8 @@ static bool run_conformance_rasterization(ReplayerState &state, const Arguments 
 					else
 						state.builder.tex_rect_flip(2, x, y, width, height, s, t, dsdx, dtdy);
 				}
+				else if (variant.ym_out_of_range)
+					state.builder.draw_triangle_ym_out_of_range(prim, ym_offset);
 				else
 					state.builder.draw_triangle(prim);
 
@@ -574,7 +581,10 @@ static bool run_conformance_rasterization(ReplayerState &state, const Arguments 
 		else
 		{
 			for (unsigned j = 0; j < variant.primitive_count; j++)
+			{
+				generate_ym_offset();
 				generate_random_input_primitive(rng, prim, variant.color, variant.depth, variant.force_flip);
+			}
 		}
 
 		if (args.verbose)
@@ -992,6 +1002,13 @@ static int main_inner(int argc, char **argv)
 	};
 	std::vector<Suite> suites;
 
+	suites.push_back({ "fill-ym-out-of-range", [](ReplayerState &state, const Arguments &args) -> bool {
+		RasterizationTestVariant variant = {};
+		variant.cycle_type = CycleType::Fill;
+		variant.fb_size = TextureSize::Bpp16;
+		variant.ym_out_of_range = true;
+		return run_conformance_rasterization(state, args, variant);
+	}});
 	suites.push_back({ "fill-8", [](ReplayerState &state, const Arguments &args) -> bool {
 		RasterizationTestVariant variant = {};
 		variant.cycle_type = CycleType::Fill;
