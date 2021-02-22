@@ -26,6 +26,7 @@
 #include "bitops.hpp"
 #include "luts.hpp"
 #include "timer.hpp"
+#include <limits>
 #ifdef PARALLEL_RDP_SHADER_DIR
 #include "global_managers.hpp"
 #include "os_filesystem.hpp"
@@ -696,7 +697,7 @@ void Renderer::set_depth_blend_state(const DepthBlendState &state)
 	stream.depth_blend_state = state;
 }
 
-void Renderer::draw_flat_primitive(const TriangleSetup &setup)
+void Renderer::draw_flat_primitive(TriangleSetup &setup)
 {
 	draw_shaded_primitive(setup, {});
 }
@@ -1350,8 +1351,28 @@ void Renderer::deduce_static_texture_state(unsigned tile, unsigned max_lod_level
 	state.texture_size = uint32_t(siz);
 }
 
-void Renderer::draw_shaded_primitive(const TriangleSetup &setup, const AttributeSetup &attr)
+void Renderer::fixup_triangle_setup(TriangleSetup &setup) const
 {
+	// If YM is lower than the first sub-scanline we rasterize, we will never observe YM at all.
+	// To account for this, fixup here so that YM is out of range.
+	// No known content actually triggers this, but some public tests triggered it.
+	int start_y = setup.yh & ~(SUBPIXELS_Y - 1);
+	if (setup.ym < start_y)
+		setup.ym = std::numeric_limits<int16_t>::max();
+
+	if ((stream.static_raster_state.flags & RASTERIZATION_INTERLACE_FIELD_BIT) != 0)
+	{
+		setup.flags |= (stream.static_raster_state.flags & RASTERIZATION_INTERLACE_FIELD_BIT) ?
+		               TRIANGLE_SETUP_INTERLACE_FIELD_BIT : 0;
+		setup.flags |= (stream.static_raster_state.flags & RASTERIZATION_INTERLACE_KEEP_ODD_BIT) ?
+		               TRIANGLE_SETUP_INTERLACE_KEEP_ODD_BIT : 0;
+	}
+}
+
+void Renderer::draw_shaded_primitive(TriangleSetup &setup, const AttributeSetup &attr)
+{
+	fixup_triangle_setup(setup);
+
 	unsigned num_tiles = compute_conservative_max_num_tiles(setup);
 
 #if 0
@@ -1365,18 +1386,7 @@ void Renderer::draw_shaded_primitive(const TriangleSetup &setup, const Attribute
 
 	update_deduced_height(setup);
 	stream.span_info_offsets.add(allocate_span_jobs(setup));
-
-	if ((stream.static_raster_state.flags & RASTERIZATION_INTERLACE_FIELD_BIT) != 0)
-	{
-		auto tmp = setup;
-		tmp.flags |= (stream.static_raster_state.flags & RASTERIZATION_INTERLACE_FIELD_BIT) ?
-				TRIANGLE_SETUP_INTERLACE_FIELD_BIT : 0;
-		tmp.flags |= (stream.static_raster_state.flags & RASTERIZATION_INTERLACE_KEEP_ODD_BIT) ?
-				TRIANGLE_SETUP_INTERLACE_KEEP_ODD_BIT : 0;
-		stream.triangle_setup.add(tmp);
-	}
-	else
-		stream.triangle_setup.add(setup);
+	stream.triangle_setup.add(setup);
 
 	if (constants.use_prim_depth)
 	{
