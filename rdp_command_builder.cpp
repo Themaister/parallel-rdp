@@ -46,6 +46,21 @@ unsigned CommandBuilder::draw_triangle(const InputPrimitive &prim)
 	return count;
 }
 
+unsigned CommandBuilder::draw_triangle_ym_out_of_range(const InputPrimitive &prim, int ym_delta)
+{
+	PrimitiveSetup prims[8];
+	unsigned count = setup_clipped_triangles(prims, prim, CullMode::None, viewport);
+	for (unsigned i = 0; i < count; i++)
+	{
+		if (ym_delta < 0)
+			prims[i].pos.y_mid = prims[i].pos.y_lo + ym_delta;
+		else if (ym_delta > 0)
+			prims[i].pos.y_hi = prims[i].pos.y_hi + ym_delta;
+		submit_clipped_primitive(prims[i]);
+	}
+	return count;
+}
+
 void CommandBuilder::end_frame()
 {
 	// Set some known working register state from a dump. No idea what all the bits do yet.
