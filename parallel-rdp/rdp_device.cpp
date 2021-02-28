@@ -70,10 +70,13 @@ CommandProcessor::CommandProcessor(Vulkan::Device &device_, void *rdram_ptr,
 			import_size = (import_size + align - 1) & ~(align - 1);
 			info.size = import_size;
 			rdram = device.create_imported_host_buffer(info, VK_EXTERNAL_MEMORY_HANDLE_TYPE_HOST_ALLOCATION_BIT_EXT, rdram_ptr);
+			if (!rdram)
+				LOGE("Failed to allocate RDRAM with VK_EXT_external_memory_host.\n");
 		}
-		else
+
+		if (!rdram)
 		{
-			LOGW("VK_EXT_external_memory_host is not supported on this device. Falling back to a slower path.\n");
+			LOGW("VK_EXT_external_memory_host not supported or failed, falling back to a slower path.\n");
 			is_host_coherent = false;
 			rdram_offset = 0;
 			host_rdram = static_cast<uint8_t *>(rdram_ptr) + rdram_offset_;
