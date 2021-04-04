@@ -280,9 +280,36 @@ void DebugApplication::update_cached_frame_from_color_pointer(unsigned index)
 		}
 		update_scanout_image_from_cached_frame(index);
 	}
+	else if (cached_color_image.fb_size == 3)
+	{
+		auto *rdram = reinterpret_cast<const uint32_t *>(replayers[index]->get_rdram());
+		size_t mask = (replayers[index]->get_rdram_size() >> 2) - 1;
+		size_t addr = cached_color_image.fb_address >> 2;
+
+		cached_frame[index].width = cached_color_image.fb_width;
+		// Height is not actually known statically, but assume 4:3 aspect ratio.
+		cached_frame[index].height = std::max(1u, (cached_color_image.fb_width * 3) / 4);
+		cached_frame[index].buffer.resize(cached_frame[index].width * cached_frame[index].height);
+
+		for (unsigned y = 0; y < cached_frame[index].height; y++)
+		{
+			for (unsigned x = 0; x < cached_frame[index].width; x++)
+			{
+				unsigned addr_index = y * cached_frame[index].width + x;
+				uint32_t color = rdram[(addr + addr_index) & mask];
+
+				auto r = (color >> 24) & 0xff;
+				auto g = (color >> 16) & 0xff;
+				auto b = (color >> 8) & 0xff;
+				auto a = (color >> 0) & 0xff;
+				cached_frame[index].buffer[addr_index] = u8vec4(r, g, b, a);
+			}
+		}
+		update_scanout_image_from_cached_frame(index);
+	}
 	else
 	{
-		fprintf(stderr, "TODO: Non-16 bit draw calls.\n");
+		fprintf(stderr, "TODO: 8-bit draw calls.\n");
 		cached_frame[index] = {};
 		update_scanout_image_from_cached_frame(index);
 	}
