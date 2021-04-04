@@ -11,7 +11,8 @@ add_library(parallel-rdp STATIC
         video_interface.cpp video_interface.hpp
         command_ring.cpp command_ring.hpp
         worker_thread.hpp luts.hpp
-        rdp_device.cpp rdp_device.hpp)
+        rdp_device.cpp rdp_device.hpp
+        rdp_dump_write.cpp rdp_dump_write.hpp)
 target_link_libraries(parallel-rdp PUBLIC granite-vulkan granite-stb)
 target_compile_options(parallel-rdp PRIVATE ${PARALLEL_RDP_CXX_FLAGS})
 target_include_directories(parallel-rdp PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
