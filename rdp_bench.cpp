@@ -24,7 +24,6 @@
 #include "global_managers.hpp"
 #include "cli_parser.hpp"
 #include "timer.hpp"
-#include "application_cli_wrapper.hpp"
 #include "global_managers_init.hpp"
 #include <stdlib.h>
 
@@ -128,17 +127,6 @@ static int main_inner(Vulkan::Device *device, int, char **)
 	return EXIT_SUCCESS;
 }
 
-#ifdef WRAPPER_CLI
-namespace Granite
-{
-Application *application_create(int argc, char **argv)
-{
-	application_dummy();
-	setup_filesystems();
-	return new ApplicationCLIWrapper(main_inner, argc, argv);
-}
-}
-#else
 int main(int argc, char **argv)
 {
 	Granite::Global::init();
@@ -147,4 +135,4 @@ int main(int argc, char **argv)
 	Granite::Global::deinit();
 	return ret;
 }
-#endif
+

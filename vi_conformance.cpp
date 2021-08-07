@@ -23,7 +23,6 @@
 #include "conformance_utils.hpp"
 #include "global_managers.hpp"
 #include "cli_parser.hpp"
-#include "application_cli_wrapper.hpp"
 #include "global_managers_init.hpp"
 
 using namespace RDP;
@@ -349,23 +348,6 @@ static int main_inner(int argc, char **argv)
 	return EXIT_SUCCESS;
 }
 
-#ifdef WRAPPER_CLI
-namespace Granite
-{
-Application *application_create(int argc, char **argv)
-{
-	application_dummy();
-	setup_filesystems();
-	if (argc <= 1)
-	{
-		argc = 5;
-		static const char *tmp_argv[] = { "granite", "--range", "0", "1000", "--verbose", nullptr };
-		argv = const_cast<char **>(tmp_argv);
-	}
-	return new ApplicationCLIWrapper(main_inner, argc, argv);
-}
-}
-#else
 int main(int argc, char **argv)
 {
 	Granite::Global::init();
@@ -374,4 +356,4 @@ int main(int argc, char **argv)
 	Granite::Global::deinit();
 	return ret;
 }
-#endif
+
