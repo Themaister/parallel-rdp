@@ -24,6 +24,7 @@
 #include <utility>
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <assert.h>
 
 // A very straight forward implementation of a triangle clipper and setup.
