@@ -572,8 +572,11 @@ Vulkan::ImageHandle VideoInterface::scale_stage(Vulkan::CommandBuffer &cmd, Vulk
 			VK_FORMAT_R8G8B8A8_UNORM);
 
 	// Rescale crop pixels to preserve aspect ratio.
-	auto crop_pixels_y = options.crop_overscan_pixels * scaling_factor * (serrate ? 2 : 1);
+	auto crop_pixels_y = options.crop_overscan_pixels * (serrate ? 2 : 1);
 	auto crop_pixels_x = unsigned(std::round(float(crop_pixels_y) * (float(rt_info.width) / float(rt_info.height))));
+	crop_pixels_x *= scaling_factor;
+	crop_pixels_y *= scaling_factor;
+
 	rt_info.width -= 2 * crop_pixels_x;
 	rt_info.height -= 2 * crop_pixels_y;
 
