@@ -171,63 +171,152 @@ static VkAccessFlags layout_to_access(VkImageLayout layout)
 	}
 }
 
-VideoInterface::Registers VideoInterface::decode_vi_registers() const
+VideoInterface::Registers VideoInterface::decode_vi_registers(HorizontalInfoLines *lines) const
 {
 	Registers reg = {};
 
-	reg.x_start = (vi_registers[unsigned(VIRegister::XScale)] >> 16) & 0xfff;
-	reg.y_start = (vi_registers[unsigned(VIRegister::YScale)] >> 16) & 0xfff;
-	reg.h_start = (vi_registers[unsigned(VIRegister::HStart)] >> 16) & 0x3ff;
-	reg.v_start = (vi_registers[unsigned(VIRegister::VStart)] >> 16) & 0x3ff;
-	reg.h_end = vi_registers[unsigned(VIRegister::HStart)] & 0x3ff;
-	reg.v_end = vi_registers[unsigned(VIRegister::VStart)] & 0x3ff;
-	reg.h_res = reg.h_end - reg.h_start;
-	reg.x_add = vi_registers[unsigned(VIRegister::XScale)] & 0xfff;
-	reg.y_add = vi_registers[unsigned(VIRegister::YScale)] & 0xfff;
-	reg.v_sync = vi_registers[unsigned(VIRegister::VSync)] & 0x3ff;
+	// Definitely should not change per scanline ...
 	reg.status = vi_registers[unsigned(VIRegister::Control)];
 	reg.vi_width = vi_registers[unsigned(VIRegister::Width)] & 0xfff;
 	reg.vi_offset = vi_registers[unsigned(VIRegister::Origin)] & 0xffffff;
 	reg.v_current_line = vi_registers[unsigned(VIRegister::VCurrentLine)] & 1;
+	reg.v_start = (vi_registers[unsigned(VIRegister::VStart)] >> 16) & 0x3ff;
 
-	reg.is_pal = unsigned(reg.v_sync) > (VI_V_SYNC_NTSC + 25);
+	// It might be possible to change YStart/YAdd per scanline, but it's dubious ...
+	int y_start = (vi_registers[unsigned(VIRegister::YScale)] >> 16) & 0xfff;
+	int y_add = vi_registers[unsigned(VIRegister::YScale)] & 0xfff;
+	reg.init_y_add = y_add;
 
-	// Clamp horizontal region to [0, 640].
-	reg.h_start -= reg.is_pal ? VI_H_OFFSET_PAL : VI_H_OFFSET_NTSC;
+	// Must be constant for a frame, or things won't make any sense.
+	int v_end = vi_registers[unsigned(VIRegister::VStart)] & 0x3ff;
+	int v_sync = vi_registers[unsigned(VIRegister::VSync)] & 0x3ff;
 
-	if (reg.h_start < 0)
-	{
-		reg.x_start -= reg.x_add * reg.h_start;
-		reg.h_res += reg.h_start;
-		reg.h_start = 0;
-		reg.left_clamp = true;
-	}
+	reg.is_pal = unsigned(v_sync) > (VI_V_SYNC_NTSC + 25);
 
-	if (reg.h_start + reg.h_res > VI_SCANOUT_WIDTH)
-	{
-		reg.h_res = VI_SCANOUT_WIDTH - reg.h_start;
-		reg.right_clamp = true;
-	}
-
-	// Clamp vertical range.
-	// Restrict the area we might have to scan out to AA buffers as a performance optimization.
+	// Clamp vertical ranges.
+	// Restrict the area we might have to scan out to AA buffers as a performance optimization
+	// and safety since we iterate over v_start/v_end later.
 	int v_end_max = reg.is_pal ? VI_V_END_PAL : VI_V_END_NTSC;
-	if (reg.v_end > v_end_max)
-		reg.v_end = v_end_max;
+	if (v_end > v_end_max)
+		v_end = v_end_max;
+	if (reg.v_start > v_end_max)
+		reg.v_start = v_end_max;
 
 	int v_start_offset = reg.is_pal ? VI_V_OFFSET_PAL : VI_V_OFFSET_NTSC;
-	reg.v_res = (reg.v_end - reg.v_start) >> 1;
+	reg.v_res = (v_end - reg.v_start) >> 1;
 	reg.v_start = (reg.v_start - v_start_offset) / 2;
 
 	if (reg.v_start < 0)
 	{
-		reg.y_start -= reg.y_add * reg.v_start;
+		// If YAdd can change per scanline, this won't be correct.
+		y_start -= y_add * reg.v_start;
 		// v_res is not adjusted here for some reason, but h_res is?
 		reg.v_start = 0;
 	}
 
-	reg.max_x = (reg.x_start + reg.h_res * reg.x_add) >> 10;
-	reg.max_y = (reg.y_start + reg.v_res * reg.y_add) >> 10;
+	// Clamp v_res to scanout range.
+	reg.v_res = std::min(reg.v_res, int(VI_MAX_OUTPUT_SCANLINES) - reg.v_start);
+
+	// Horizontal shenanigans.
+	int h_start_clamp_lo = INT32_MAX;
+	int h_end_clamp_hi = 0;
+	int h_start_lo = INT32_MAX;
+	int h_end_hi = 0;
+
+	reg.max_x = 0;
+	bool degenerate_y = reg.v_res <= 0;
+
+	// Clear out degenerate lines.
+	if (lines)
+	{
+		if (degenerate_y)
+		{
+			for (auto &line : lines->lines)
+				line = {};
+		}
+		else
+		{
+			for (int line = 0; line < reg.v_start; line++)
+				lines->lines[line] = {};
+			for (int line = reg.v_start + reg.v_res; line < int(VI_MAX_OUTPUT_SCANLINES); line++)
+				lines->lines[line] = {};
+		}
+	}
+
+	const auto analyze_line = [&](int x_start, int x_add, int h_start, int h_end, HorizontalInfo *line) {
+		// Clamp horizontal region to [0, 640].
+		bool left_clamp = false;
+		bool right_clamp = false;
+
+		h_start -= reg.is_pal ? VI_H_OFFSET_PAL : VI_H_OFFSET_NTSC;
+		h_end -= reg.is_pal ? VI_H_OFFSET_PAL : VI_H_OFFSET_NTSC;
+
+		if (h_start < 0)
+		{
+			x_start -= x_add * h_start;
+			h_start = 0;
+			// Reference weirdness that doesn't really make sense.
+			left_clamp = true;
+		}
+
+		if (h_end > VI_SCANOUT_WIDTH)
+		{
+			h_end = VI_SCANOUT_WIDTH;
+			// Reference weirdness that doesn't really make sense.
+			right_clamp = true;
+		}
+
+		int h_start_clamp = h_start + (left_clamp ? 0 : 8);
+		int h_end_clamp = h_end - (right_clamp ? 0 : 7);
+
+		// Effectively, these are bounding boxes.
+		int h_res = h_end - h_start;
+		int max_x = (x_start + h_res * x_add) >> 10;
+		reg.max_x = std::max(reg.max_x, max_x);
+		h_start_lo = std::min(h_start_lo, h_start);
+		h_end_hi = std::max(h_end_hi, h_end);
+		h_start_clamp_lo = std::min(h_start_clamp_lo, h_start_clamp);
+		h_end_clamp_hi = std::max(h_end_clamp_hi, h_end_clamp);
+
+		if (line)
+		{
+			auto &l = *line;
+			l.h_start = h_start;
+			l.h_start_clamp = h_start_clamp;
+			l.h_end_clamp = h_end_clamp;
+			l.x_start = x_start;
+			l.x_add = x_add;
+			l.y_start = y_start;
+			l.y_add = y_add;
+			l.y_base = 0; // TODO: If we start adjusting YAdd per scanline, we'll need to begin a new base region.
+		}
+	};
+
+	// TODO: Actually grab VI state per line.
+	int x_start = (vi_registers[unsigned(VIRegister::XScale)] >> 16) & 0xfff;
+	int x_add = vi_registers[unsigned(VIRegister::XScale)] & 0xfff;
+	int h_start = (vi_registers[unsigned(VIRegister::HStart)] >> 16) & 0x3ff;
+	int h_end = vi_registers[unsigned(VIRegister::HStart)] & 0x3ff;
+
+	if (degenerate_y)
+	{
+		// Need to make sure we update bounding box state for X at least.
+		// This is treated as a degenerate frame, not necessarily invalid frame (null handle).
+		// This is to have same behavior as reference.
+		analyze_line(x_start, x_add, h_start, h_end, nullptr);
+	}
+	else
+	{
+		for (int line = reg.v_start; line < reg.v_start + reg.v_res; line++)
+			analyze_line(x_start, x_add, h_start, h_end, lines ? &lines->lines[line] : nullptr);
+	}
+
+	// Effectively, these are bounding boxes.
+	reg.max_y = (y_start + reg.v_res * y_add) >> 10;
+	reg.h_start = h_start_lo;
+	reg.h_res = h_end_hi - h_start_lo;
+	reg.h_start_clamp = h_start_clamp_lo;
+	reg.h_res_clamp = h_end_clamp_hi - h_start_clamp_lo;
 
 	// The basic formula is that a frame is counted with an active horizontal range of
 	// X(range) = [H_OFFSET, H_OFFSET + H_RES], giving 640 output pixels per line.
@@ -261,7 +350,7 @@ VideoInterface::Registers VideoInterface::decode_vi_registers() const
 
 void VideoInterface::scanout_memory_range(unsigned &offset, unsigned &length) const
 {
-	auto reg = decode_vi_registers();
+	auto reg = decode_vi_registers(nullptr);
 
 	bool divot = (reg.status & VI_CONTROL_DIVOT_ENABLE_BIT) != 0;
 
@@ -292,7 +381,7 @@ bool VideoInterface::need_fetch_bug_emulation(const Registers &regs, unsigned sc
 {
 	// If we risk sampling same Y coordinate for two scanlines we can trigger this case,
 	// so add workaround paths for it.
-	return regs.y_add < 1024 && scaling_factor == 1;
+	return regs.init_y_add < 1024 && scaling_factor == 1;
 }
 
 Vulkan::ImageHandle VideoInterface::vram_fetch_stage(const Registers &regs, unsigned scaling_factor) const
@@ -593,42 +682,28 @@ Vulkan::ImageHandle VideoInterface::divot_stage(Vulkan::CommandBuffer &cmd, Vulk
 	return divot_image;
 }
 
-constexpr uint32_t MaxOutputScanlines = VI_V_RES_MAX >> 1;
-
-struct HorizontalInfo
-{
-	int32_t h_start;
-	int32_t h_start_clamp;
-	int32_t h_end_clamp;
-	int32_t x_start;
-	int32_t x_add;
-	int32_t y_start;
-	int32_t y_add;
-	int32_t y_base;
-};
-
-static void bind_horizontal_info_view(Vulkan::CommandBuffer &cmd,
-                                      const HorizontalInfo (&horizontal_infos)[MaxOutputScanlines])
+void VideoInterface::bind_horizontal_info_view(Vulkan::CommandBuffer &cmd, const HorizontalInfoLines &lines)
 {
 	auto &device = cmd.get_device();
 
 	Vulkan::BufferCreateInfo horizontal_buffer_info = {};
-	horizontal_buffer_info.size = sizeof(horizontal_infos);
+	horizontal_buffer_info.size = sizeof(lines);
 	horizontal_buffer_info.usage = VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT;
 	horizontal_buffer_info.domain = Vulkan::BufferDomain::LinkedDeviceHost;
-	auto scanout_parameters = device.create_buffer(horizontal_buffer_info, horizontal_infos);
+	auto scanout_parameters = device.create_buffer(horizontal_buffer_info, &lines);
 
 	Vulkan::BufferViewCreateInfo horizontal_view_info = {};
 	horizontal_view_info.format = VK_FORMAT_R32G32B32A32_SINT;
 	horizontal_view_info.buffer = scanout_parameters.get();
-	horizontal_view_info.range = sizeof(horizontal_infos);
+	horizontal_view_info.range = sizeof(lines);
 
 	auto scanout_parameters_view = device.create_buffer_view(horizontal_view_info);
 	cmd.set_buffer_view(0, 1, *scanout_parameters_view);
 }
 
 Vulkan::ImageHandle VideoInterface::scale_stage(Vulkan::CommandBuffer &cmd, Vulkan::Image &divot_image,
-                                                Registers regs, unsigned scaling_factor, bool degenerate,
+                                                Registers regs, const HorizontalInfoLines &lines,
+                                                unsigned scaling_factor, bool degenerate,
                                                 const ScanoutOptions &options) const
 {
 	Vulkan::ImageHandle scale_image;
@@ -724,7 +799,7 @@ Vulkan::ImageHandle VideoInterface::scale_stage(Vulkan::CommandBuffer &cmd, Vulk
 	push.h_offset = int(crop_pixels_x);
 	push.v_offset = int(crop_pixels_y);
 	push.v_start = regs.v_start;
-	push.y_add = regs.y_add;
+	push.y_add = regs.init_y_add;
 	push.frame_count = frame_count;
 
 	cmd.set_opaque_state();
@@ -736,33 +811,7 @@ Vulkan::ImageHandle VideoInterface::scale_stage(Vulkan::CommandBuffer &cmd, Vulk
 	cmd.set_program(device->request_program(shader_bank->fullscreen, shader_bank->vi_scale));
 #endif
 	cmd.set_buffer_view(1, 0, *gamma_lut_view);
-
-	auto h_start_field = regs.h_start;
-	auto h_res_field = regs.h_res;
-
-	if (!regs.left_clamp)
-	{
-		regs.h_start += 8 * int(scaling_factor);
-		regs.h_res -= 8 * int(scaling_factor);
-	}
-
-	if (!regs.right_clamp)
-		regs.h_res -= 7 * int(scaling_factor);
-
-	HorizontalInfo horizontal_infos[MaxOutputScanlines];
-	for (auto &info : horizontal_infos)
-	{
-		info.h_start = h_start_field;
-		info.h_start_clamp = regs.h_start;
-		info.h_end_clamp = regs.h_start + regs.h_res;
-		info.x_start = regs.x_start;
-		info.x_add = regs.x_add;
-		info.y_start = regs.y_start;
-		info.y_add = regs.y_add;
-		info.y_base = 0;
-	}
-
-	bind_horizontal_info_view(cmd, horizontal_infos);
+	bind_horizontal_info_view(cmd, lines);
 
 	cmd.push_constants(&push, 0, sizeof(push));
 
@@ -789,7 +838,7 @@ Vulkan::ImageHandle VideoInterface::scale_stage(Vulkan::CommandBuffer &cmd, Vulk
 			rect.extent.height = 0;
 	};
 
-	if (!degenerate && regs.h_res && regs.v_res)
+	if (!degenerate && regs.h_res > 0 && regs.v_res > 0)
 	{
 		VkRect2D rect = {{ regs.h_start, regs.v_start }, { uint32_t(regs.h_res), uint32_t(regs.v_res) }};
 		shift_rect(rect, -int(crop_pixels_x), -int(crop_pixels_y));
@@ -823,9 +872,9 @@ Vulkan::ImageHandle VideoInterface::scale_stage(Vulkan::CommandBuffer &cmd, Vulk
 
 		if (degenerate)
 		{
-			if (h_res_field > 0)
+			if (regs.h_res > 0)
 			{
-				VkRect2D rect = {{ h_start_field, 0 }, { uint32_t(h_res_field), prev_scanout_image->get_height() }};
+				VkRect2D rect = {{ regs.h_start, 0 }, { uint32_t(regs.h_res), prev_scanout_image->get_height() }};
 				shift_rect(rect, -int(crop_pixels_x), -int(crop_pixels_y));
 				if (rect.extent.width > 0 && rect.extent.height > 0)
 				{
@@ -837,9 +886,9 @@ Vulkan::ImageHandle VideoInterface::scale_stage(Vulkan::CommandBuffer &cmd, Vulk
 		else
 		{
 			// Top part.
-			if (h_res_field > 0 && regs.v_start > 0)
+			if (regs.h_res > 0 && regs.v_start > 0)
 			{
-				VkRect2D rect = {{ h_start_field, 0 }, { uint32_t(h_res_field), uint32_t(regs.v_start) }};
+				VkRect2D rect = {{ regs.h_start, 0 }, { uint32_t(regs.h_res), uint32_t(regs.v_start) }};
 				shift_rect(rect, -int(crop_pixels_x), -int(crop_pixels_y));
 				if (rect.extent.width > 0 && rect.extent.height > 0)
 				{
@@ -849,9 +898,9 @@ Vulkan::ImageHandle VideoInterface::scale_stage(Vulkan::CommandBuffer &cmd, Vulk
 			}
 
 			// Middle part, don't overwrite the 8 pixel guard band.
-			if (regs.h_res > 0 && regs.v_res > 0)
+			if (regs.h_res_clamp > 0 && regs.v_res > 0)
 			{
-				VkRect2D rect = {{ regs.h_start, regs.v_start }, { uint32_t(regs.h_res), uint32_t(regs.v_res) }};
+				VkRect2D rect = {{ regs.h_start_clamp, regs.v_start }, { uint32_t(regs.h_res_clamp), uint32_t(regs.v_res) }};
 				shift_rect(rect, -int(crop_pixels_x), -int(crop_pixels_y));
 				if (rect.extent.width > 0 && rect.extent.height > 0)
 				{
@@ -861,10 +910,10 @@ Vulkan::ImageHandle VideoInterface::scale_stage(Vulkan::CommandBuffer &cmd, Vulk
 			}
 
 			// Bottom part.
-			if (h_res_field > 0 && prev_scanout_image->get_height() > uint32_t(regs.v_start + regs.v_res))
+			if (regs.h_res > 0 && prev_scanout_image->get_height() > uint32_t(regs.v_start + regs.v_res))
 			{
-				VkRect2D rect = {{ h_start_field, regs.v_start + regs.v_res },
-				                 { uint32_t(h_res_field), prev_scanout_image->get_height() - uint32_t(regs.v_start + regs.v_res) }};
+				VkRect2D rect = {{ regs.h_start, regs.v_start + regs.v_res },
+				                 { uint32_t(regs.h_res), prev_scanout_image->get_height() - uint32_t(regs.v_start + regs.v_res) }};
 				shift_rect(rect, -int(crop_pixels_x), -int(crop_pixels_y));
 				if (rect.extent.width > 0 && rect.extent.height > 0)
 				{
@@ -982,11 +1031,13 @@ Vulkan::ImageHandle VideoInterface::upscale_deinterlace(Vulkan::CommandBuffer &c
 	return deinterlaced_image;
 }
 
-Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const ScanoutOptions &options, unsigned scaling_factor)
+Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const ScanoutOptions &options, unsigned scaling_factor_)
 {
+	int scaling_factor = int(scaling_factor_);
 	Vulkan::ImageHandle scanout;
+	HorizontalInfoLines lines;
 
-	auto regs = decode_vi_registers();
+	auto regs = decode_vi_registers(&lines);
 
 	if (regs.vi_offset == 0)
 	{
@@ -1062,16 +1113,26 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const S
 
 	bool degenerate = regs.h_res <= 0 || regs.v_res <= 0;
 
-	regs.h_start *= int(scaling_factor);
-	regs.v_start *= int(scaling_factor);
-	regs.h_res *= int(scaling_factor);
-	regs.v_res *= int(scaling_factor);
-	regs.x_start *= int(scaling_factor);
-	regs.y_start *= int(scaling_factor);
-	regs.h_end *= int(scaling_factor);
-	regs.v_end *= int(scaling_factor);
-	regs.max_x = regs.max_x * int(scaling_factor) + int(scaling_factor - 1);
-	regs.max_y = regs.max_y * int(scaling_factor) + int(scaling_factor - 1);
+	regs.h_start *= scaling_factor;
+	regs.h_start_clamp *= scaling_factor;
+	regs.v_start *= scaling_factor;
+
+	regs.h_res *= scaling_factor;
+	regs.h_res_clamp *= scaling_factor;
+	regs.v_res *= scaling_factor;
+
+	regs.max_x = regs.max_x * scaling_factor + (scaling_factor - 1);
+	regs.max_y = regs.max_y * scaling_factor + (scaling_factor - 1);
+
+	for (auto &line : lines.lines)
+	{
+		line.h_start *= scaling_factor;
+		line.h_start_clamp *= scaling_factor;
+		line.h_end_clamp *= scaling_factor;
+		line.x_start *= scaling_factor;
+		line.y_start *= scaling_factor;
+		line.y_base *= scaling_factor;
+	}
 
 	// First we copy data out of VRAM into a texture which we will then perform our post-AA on.
 	// We do this on the async queue so we don't have to stall async queue on graphics work to deal with WAR hazards.
@@ -1108,7 +1169,8 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const S
 
 	// Scale pass
 	auto scale_image = scale_stage(*cmd, *divot_image,
-	                               regs, scaling_factor, degenerate, options);
+	                               regs, lines,
+	                               scaling_factor, degenerate, options);
 
 	auto src_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
@@ -1131,7 +1193,8 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const S
 
 		bool field_state = regs.v_current_line == 0;
 		scale_image = upscale_deinterlace(*cmd, *scale_image,
-		                                  std::max(1u, scaling_factor >> options.downscale_steps), field_state);
+		                                  std::max(1, scaling_factor >> options.downscale_steps),
+		                                  field_state);
 		src_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 	}
 

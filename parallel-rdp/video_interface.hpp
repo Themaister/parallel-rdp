@@ -113,23 +113,44 @@ private:
 	size_t rdram_size = 0;
 	bool timestamp = false;
 
+	struct HorizontalInfo
+	{
+		int32_t h_start;
+		int32_t h_start_clamp;
+		int32_t h_end_clamp;
+		int32_t x_start;
+		int32_t x_add;
+		int32_t y_start;
+		int32_t y_add;
+		int32_t y_base;
+	};
+
+	struct HorizontalInfoLines
+	{
+		HorizontalInfo lines[VI_MAX_OUTPUT_SCANLINES];
+	};
+
+	static void bind_horizontal_info_view(Vulkan::CommandBuffer &cmd, const HorizontalInfoLines &lines);
+
 	struct Registers
 	{
-		int x_start, y_start;
-		int h_start, v_start;
-		int h_end, v_end;
-		int h_res, v_res;
-		int x_add, y_add;
-		int v_sync;
 		int vi_width;
 		int vi_offset;
-		int max_x, max_y;
 		int v_current_line;
-		bool left_clamp, right_clamp;
 		bool is_pal;
 		uint32_t status;
+
+		int init_y_add;
+
+		// Global scale pass scissor box.
+		int h_start_clamp, h_res_clamp;
+		int h_start, h_res;
+		int v_start, v_res;
+
+		// For AA stages.
+		int max_x, max_y;
 	};
-	Registers decode_vi_registers() const;
+	Registers decode_vi_registers(HorizontalInfoLines *lines) const;
 	Vulkan::ImageHandle vram_fetch_stage(const Registers &registers,
 	                                     unsigned scaling_factor) const;
 	Vulkan::ImageHandle aa_fetch_stage(Vulkan::CommandBuffer &cmd,
@@ -143,6 +164,7 @@ private:
 	Vulkan::ImageHandle scale_stage(Vulkan::CommandBuffer &cmd,
 	                                Vulkan::Image &divot_image,
 	                                Registers registers,
+	                                const HorizontalInfoLines &lines,
 	                                unsigned scaling_factor,
 	                                bool degenerate,
 	                                const ScanoutOptions &options) const;
