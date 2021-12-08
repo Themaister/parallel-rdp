@@ -730,16 +730,20 @@ Vulkan::ImageHandle VideoInterface::scale_stage(Vulkan::CommandBuffer &cmd, Vulk
 			rect.extent.height += rect.offset.y;
 			rect.offset.y = 0;
 		}
+
+		// Check for signed overflow without relying on -fwrapv.
+		if (rect.extent.width & 0x80000000u)
+			rect.extent.width = 0;
+		if (rect.extent.height & 0x80000000u)
+			rect.extent.height = 0;
 	};
 
-	if (!degenerate && regs.h_res > int(crop_pixels_x) && regs.v_res > int(crop_pixels_y))
+	if (!degenerate && regs.h_res && regs.v_res)
 	{
 		VkRect2D rect = {{ regs.h_start, regs.v_start }, { uint32_t(regs.h_res), uint32_t(regs.v_res) }};
 		shift_rect(rect, -int(crop_pixels_x), -int(crop_pixels_y));
 
-		// Check for signed overflow without relying on -fwrapv.
-		if (((rect.extent.width | rect.extent.height) & 0x80000000u) == 0u &&
-		    rect.extent.width > 0 && rect.extent.height > 0)
+		if (rect.extent.width > 0 && rect.extent.height > 0)
 		{
 			cmd.set_texture(0, 0, divot_image.get_view());
 			cmd.set_scissor(rect);
