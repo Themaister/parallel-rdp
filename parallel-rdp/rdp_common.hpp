@@ -382,6 +382,11 @@ constexpr uint32_t VI_V_RES_NTSC = 480;
 constexpr uint32_t VI_V_RES_PAL = 576;
 constexpr int VI_SCANOUT_WIDTH = 640;
 
+// Handle odd v_start as well. Needed for rounding to work in our favor.
+constexpr uint32_t VI_V_END_PAL = (VI_V_OFFSET_PAL + VI_V_RES_PAL) | 1;
+constexpr uint32_t VI_V_END_NTSC = (VI_V_OFFSET_NTSC + VI_V_RES_NTSC) | 1;
+constexpr uint32_t VI_V_END_MAX = VI_V_END_PAL > VI_V_END_NTSC ? VI_V_END_PAL : VI_V_END_NTSC;
+
 static inline uint32_t make_default_v_start()
 {
 	return make_vi_start_register(VI_V_OFFSET_NTSC, VI_V_OFFSET_NTSC + 224 * 2);

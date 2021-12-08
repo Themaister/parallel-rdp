@@ -182,7 +182,6 @@ VideoInterface::Registers VideoInterface::decode_vi_registers() const
 	reg.h_end = vi_registers[unsigned(VIRegister::HStart)] & 0x3ff;
 	reg.v_end = vi_registers[unsigned(VIRegister::VStart)] & 0x3ff;
 	reg.h_res = reg.h_end - reg.h_start;
-	reg.v_res = (reg.v_end - reg.v_start) >> 1;
 	reg.x_add = vi_registers[unsigned(VIRegister::XScale)] & 0xfff;
 	reg.y_add = vi_registers[unsigned(VIRegister::YScale)] & 0xfff;
 	reg.v_sync = vi_registers[unsigned(VIRegister::VSync)] & 0x3ff;
@@ -192,10 +191,9 @@ VideoInterface::Registers VideoInterface::decode_vi_registers() const
 	reg.v_current_line = vi_registers[unsigned(VIRegister::VCurrentLine)] & 1;
 
 	reg.is_pal = unsigned(reg.v_sync) > (VI_V_SYNC_NTSC + 25);
-	reg.h_start -= reg.is_pal ? VI_H_OFFSET_PAL : VI_H_OFFSET_NTSC;
 
-	int v_start_offset = reg.is_pal ? VI_V_OFFSET_PAL : VI_V_OFFSET_NTSC;
-	reg.v_start = (reg.v_start - v_start_offset) / 2;
+	// Clamp horizontal region to [0, 640].
+	reg.h_start -= reg.is_pal ? VI_H_OFFSET_PAL : VI_H_OFFSET_NTSC;
 
 	if (reg.h_start < 0)
 	{
@@ -211,14 +209,52 @@ VideoInterface::Registers VideoInterface::decode_vi_registers() const
 		reg.right_clamp = true;
 	}
 
+	// Clamp vertical range.
+	// Restrict the area we might have to scan out to AA buffers as a performance optimization.
+	int v_end_max = reg.is_pal ? VI_V_END_PAL : VI_V_END_NTSC;
+	if (reg.v_end > v_end_max)
+		reg.v_end = v_end_max;
+
+	int v_start_offset = reg.is_pal ? VI_V_OFFSET_PAL : VI_V_OFFSET_NTSC;
+	reg.v_res = (reg.v_end - reg.v_start) >> 1;
+	reg.v_start = (reg.v_start - v_start_offset) / 2;
+
 	if (reg.v_start < 0)
 	{
 		reg.y_start -= reg.y_add * reg.v_start;
+		// v_res is not adjusted here for some reason, but h_res is?
 		reg.v_start = 0;
 	}
 
 	reg.max_x = (reg.x_start + reg.h_res * reg.x_add) >> 10;
 	reg.max_y = (reg.y_start + reg.v_res * reg.y_add) >> 10;
+
+	// The basic formula is that a frame is counted with an active horizontal range of
+	// X(range) = [H_OFFSET, H_OFFSET + H_RES], giving 640 output pixels per line.
+	// Similarly, vertical scanout has an active range of Y(range) = [V_OFFSET, V_OFFSET + V_RES].
+	// Y is counted in terms of interlaced lines (i.e. 480 and 576).
+	// We will scan out half of these per field (e.g. 240p or 480i for NTSC).
+	// The HStart and VStart registers are used to signal where on screen we render.
+	// HStart and VStart registers might carve out a portion of the screen, or use a larger one,
+	// the active area on screen is an intersection of the VI register state and the X(range)/Y(range).
+	// When the X counter hits HStart, we begin computing the X coordinate we want to sample based on
+	// X(sample) = XStart + XAdd * (X - HStart).
+	// Similarly, Y(sample) = YStart + YAdd * (Y - (VStart >> 1)), YAdd increments once per scanline.
+	// We always normalize the interpolations to be progressive.
+	// Interlacing just shifts positions on screen after the fact.
+	//
+	// VRAM(X, Y) is fetched with any post-processing required, looking at neighboring VRAM pixels.
+	// For this reason, we compute the maximum X and Y we might access, and build an X x Y image
+	// which is already preprocessed with AA, Divot filters, etc.
+	// The final scaling pass interpolates that result.
+	// The mental model here is that the VI could have a line buffer to keep some scanlines in cache to support the
+	// processing. XStart/YStart registers just control how fast we iterate through these lines,
+	// which implements scaling effects.
+	//
+	// As another weird quirk, it seems like we need to account for a
+	// 8 pixel guard band horizontally (reg.left_clamp / reg.right_clamp)
+	// if we begin scanout inside the active region for whatever reason.
+	// This is to match reference.
 
 	return reg;
 }
