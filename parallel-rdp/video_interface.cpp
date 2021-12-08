@@ -613,8 +613,16 @@ Vulkan::ImageHandle VideoInterface::scale_stage(Vulkan::CommandBuffer &cmd, Vulk
 	crop_pixels_x *= scaling_factor;
 	crop_pixels_y *= scaling_factor;
 
-	rt_info.width -= 2 * crop_pixels_x;
-	rt_info.height -= 2 * crop_pixels_y;
+	if (2 * crop_pixels_x < rt_info.width && 2 * crop_pixels_y < rt_info.height)
+	{
+		rt_info.width -= 2 * crop_pixels_x;
+		rt_info.height -= 2 * crop_pixels_y;
+	}
+	else
+	{
+		LOGE("Too large crop of %u x %u for RT %u x %u.\n",
+			 crop_pixels_x, crop_pixels_y, rt_info.width, rt_info.height);
+	}
 
 	rt_info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 	rt_info.initial_layout = VK_IMAGE_LAYOUT_UNDEFINED;
