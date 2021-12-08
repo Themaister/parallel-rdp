@@ -593,6 +593,40 @@ Vulkan::ImageHandle VideoInterface::divot_stage(Vulkan::CommandBuffer &cmd, Vulk
 	return divot_image;
 }
 
+constexpr uint32_t MaxOutputScanlines = VI_V_RES_MAX >> 1;
+
+struct HorizontalInfo
+{
+	int32_t h_start;
+	int32_t h_start_clamp;
+	int32_t h_end_clamp;
+	int32_t x_start;
+	int32_t x_add;
+	int32_t y_start;
+	int32_t y_add;
+	int32_t y_base;
+};
+
+static void bind_horizontal_info_view(Vulkan::CommandBuffer &cmd,
+                                      const HorizontalInfo (&horizontal_infos)[MaxOutputScanlines])
+{
+	auto &device = cmd.get_device();
+
+	Vulkan::BufferCreateInfo horizontal_buffer_info = {};
+	horizontal_buffer_info.size = sizeof(horizontal_infos);
+	horizontal_buffer_info.usage = VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT;
+	horizontal_buffer_info.domain = Vulkan::BufferDomain::LinkedDeviceHost;
+	auto scanout_parameters = device.create_buffer(horizontal_buffer_info, horizontal_infos);
+
+	Vulkan::BufferViewCreateInfo horizontal_view_info = {};
+	horizontal_view_info.format = VK_FORMAT_R32G32B32A32_SINT;
+	horizontal_view_info.buffer = scanout_parameters.get();
+	horizontal_view_info.range = sizeof(horizontal_infos);
+
+	auto scanout_parameters_view = device.create_buffer_view(horizontal_view_info);
+	cmd.set_buffer_view(0, 1, *scanout_parameters_view);
+}
+
 Vulkan::ImageHandle VideoInterface::scale_stage(Vulkan::CommandBuffer &cmd, Vulkan::Image &divot_image,
                                                 Registers regs, unsigned scaling_factor, bool degenerate,
                                                 const ScanoutOptions &options) const
@@ -662,16 +696,19 @@ Vulkan::ImageHandle VideoInterface::scale_stage(Vulkan::CommandBuffer &cmd, Vulk
 
 	struct Push
 	{
-		int32_t x_offset, y_offset;
 		int32_t h_offset, v_offset;
-		uint32_t x_add;
+		int32_t v_start;
 		uint32_t y_add;
 		uint32_t frame_count;
 
 		uint32_t serrate_shift;
 		uint32_t serrate_mask;
 		uint32_t serrate_select;
+
+		uint32_t info_y_shift;
 	} push = {};
+
+	push.info_y_shift = Vulkan::log2_integer(scaling_factor);
 
 	if (serrate)
 	{
@@ -681,13 +718,12 @@ Vulkan::ImageHandle VideoInterface::scale_stage(Vulkan::CommandBuffer &cmd, Vulk
 		push.serrate_mask = 1;
 		bool field_state = regs.v_current_line == 0;
 		push.serrate_select = int(field_state);
+		push.info_y_shift++;
 	}
 
-	push.x_offset = regs.x_start;
-	push.y_offset = regs.y_start;
-	push.h_offset = int(crop_pixels_x) - regs.h_start;
-	push.v_offset = int(crop_pixels_y) - regs.v_start;
-	push.x_add = regs.x_add;
+	push.h_offset = int(crop_pixels_x);
+	push.v_offset = int(crop_pixels_y);
+	push.v_start = regs.v_start;
 	push.y_add = regs.y_add;
 	push.frame_count = frame_count;
 
@@ -712,6 +748,21 @@ Vulkan::ImageHandle VideoInterface::scale_stage(Vulkan::CommandBuffer &cmd, Vulk
 
 	if (!regs.right_clamp)
 		regs.h_res -= 7 * int(scaling_factor);
+
+	HorizontalInfo horizontal_infos[MaxOutputScanlines];
+	for (auto &info : horizontal_infos)
+	{
+		info.h_start = h_start_field;
+		info.h_start_clamp = regs.h_start;
+		info.h_end_clamp = regs.h_start + regs.h_res;
+		info.x_start = regs.x_start;
+		info.x_add = regs.x_add;
+		info.y_start = regs.y_start;
+		info.y_add = regs.y_add;
+		info.y_base = 0;
+	}
+
+	bind_horizontal_info_view(cmd, horizontal_infos);
 
 	cmd.push_constants(&push, 0, sizeof(push));
 

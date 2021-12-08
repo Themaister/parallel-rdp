@@ -382,6 +382,7 @@ constexpr uint32_t VI_V_RES_NTSC = 480;
 constexpr uint32_t VI_V_RES_PAL = 576;
 constexpr int VI_SCANOUT_WIDTH = 640;
 
+constexpr uint32_t VI_V_RES_MAX = VI_V_RES_PAL > VI_V_RES_NTSC ? VI_V_RES_PAL : VI_V_RES_NTSC;
 // Handle odd v_start as well. Needed for rounding to work in our favor.
 constexpr uint32_t VI_V_END_PAL = (VI_V_OFFSET_PAL + VI_V_RES_PAL) | 1;
 constexpr uint32_t VI_V_END_NTSC = (VI_V_OFFSET_NTSC + VI_V_RES_NTSC) | 1;
