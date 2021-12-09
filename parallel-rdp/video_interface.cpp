@@ -1137,6 +1137,7 @@ void VideoInterface::end_vi_register_per_scanline()
 
 Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const ScanoutOptions &options, unsigned scaling_factor_)
 {
+	unsigned downscale_steps = std::min(8u, options.downscale_steps);
 	int scaling_factor = int(scaling_factor_);
 	Vulkan::ImageHandle scanout;
 	HorizontalInfoLines lines;
@@ -1279,13 +1280,13 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const S
 
 	auto src_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-	if (options.downscale_steps && scaling_factor > 1)
+	if (downscale_steps && scaling_factor > 1)
 	{
 		cmd->image_barrier(*scale_image, src_layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
 		                   layout_to_stage(src_layout), layout_to_access(src_layout),
 		                   VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT);
 
-		scale_image = downscale_stage(*cmd, *scale_image, scaling_factor, options.downscale_steps);
+		scale_image = downscale_stage(*cmd, *scale_image, scaling_factor, downscale_steps);
 		src_layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
 	}
 
@@ -1298,7 +1299,7 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const S
 
 		bool field_state = regs.v_current_line == 0;
 		scale_image = upscale_deinterlace(*cmd, *scale_image,
-		                                  std::max(1, scaling_factor >> options.downscale_steps),
+		                                  std::max(1, scaling_factor >> downscale_steps),
 		                                  field_state);
 		src_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 	}
