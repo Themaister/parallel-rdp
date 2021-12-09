@@ -68,34 +68,40 @@ struct VITestVariant
 	bool serrate = false;
 };
 
-static void set_default_vi_registers(ReplayerState &state, const VITestVariant &variant)
+static void set_default_vi_registers(ReplayerDriver &state, const VITestVariant &variant)
 {
-	state.combined->set_vi_register(VIRegister::Control,
-	                                variant.aa |
-	                                variant.fmt |
-	                                (variant.divot ? VI_CONTROL_DIVOT_ENABLE_BIT : 0) |
-	                                (variant.dither_filter ? VI_CONTROL_DITHER_FILTER_ENABLE_BIT : 0) |
-	                                (variant.gamma ? VI_CONTROL_GAMMA_ENABLE_BIT : 0) |
-	                                (variant.gamma_dither ? VI_CONTROL_GAMMA_DITHER_ENABLE_BIT : 0) |
-	                                (variant.serrate ? VI_CONTROL_SERRATE_BIT : 0));
+	state.set_vi_register(VIRegister::Control,
+	                      variant.aa |
+	                      variant.fmt |
+	                      (variant.divot ? VI_CONTROL_DIVOT_ENABLE_BIT : 0) |
+	                      (variant.dither_filter ? VI_CONTROL_DITHER_FILTER_ENABLE_BIT : 0) |
+	                      (variant.gamma ? VI_CONTROL_GAMMA_ENABLE_BIT : 0) |
+	                      (variant.gamma_dither ? VI_CONTROL_GAMMA_DITHER_ENABLE_BIT : 0) |
+	                      (variant.serrate ? VI_CONTROL_SERRATE_BIT : 0));
 
-	state.combined->set_vi_register(VIRegister::Origin, 567123);
-	state.combined->set_vi_register(VIRegister::Width, 100);
-	state.combined->set_vi_register(VIRegister::VSync, variant.pal ? VI_V_SYNC_PAL : VI_V_SYNC_NTSC);
-	state.combined->set_vi_register(VIRegister::VStart,
-	                                make_vi_start_register(variant.pal ? VI_V_OFFSET_PAL : VI_V_OFFSET_NTSC,
-	                                                       (variant.pal ? VI_V_OFFSET_PAL : VI_V_OFFSET_NTSC) + 224 * 2));
-	state.combined->set_vi_register(VIRegister::XScale, make_vi_scale_register(variant.x_scale, variant.x_bias));
-	state.combined->set_vi_register(VIRegister::YScale, make_vi_scale_register(variant.y_scale, variant.y_bias));
+	state.set_vi_register(VIRegister::Origin, 567123);
+	state.set_vi_register(VIRegister::Width, 100);
+	state.set_vi_register(VIRegister::VSync, variant.pal ? VI_V_SYNC_PAL : VI_V_SYNC_NTSC);
+	state.set_vi_register(VIRegister::VStart,
+	                      make_vi_start_register(variant.pal ? VI_V_OFFSET_PAL : VI_V_OFFSET_NTSC,
+	                                             (variant.pal ? VI_V_OFFSET_PAL : VI_V_OFFSET_NTSC) + 224 * 2));
+	state.set_vi_register(VIRegister::XScale, make_vi_scale_register(variant.x_scale, variant.x_bias));
+	state.set_vi_register(VIRegister::YScale, make_vi_scale_register(variant.y_scale, variant.y_bias));
 
 	// Ensure persistent state is cleared out between tests.
-	state.combined->set_vi_register(VIRegister::HStart,
-	                                make_vi_start_register(640, 0));
-	state.combined->end_frame();
+	state.set_vi_register(VIRegister::HStart,
+	                      make_vi_start_register(640, 0));
+	state.end_frame();
 
-	state.combined->set_vi_register(VIRegister::HStart,
-	                                make_vi_start_register(variant.pal ? VI_H_OFFSET_PAL : VI_H_OFFSET_NTSC,
-	                                                       (variant.pal ? VI_H_OFFSET_PAL : VI_H_OFFSET_NTSC) + 640));
+	state.set_vi_register(VIRegister::HStart,
+	                      make_vi_start_register(variant.pal ? VI_H_OFFSET_PAL : VI_H_OFFSET_NTSC,
+	                                             (variant.pal ? VI_H_OFFSET_PAL : VI_H_OFFSET_NTSC) + 640));
+}
+
+static void set_default_vi_registers(ReplayerState &state, const VITestVariant &variant)
+{
+	set_default_vi_registers(*state.combined, variant);
+	set_default_vi_registers(*state.gpu_scaled, variant);
 }
 
 static bool run_conformance_vi(ReplayerState &state, const Arguments &args, const VITestVariant &variant)
@@ -153,7 +159,7 @@ static bool run_conformance_vi(ReplayerState &state, const Arguments &args, cons
 	return true;
 }
 
-static bool run_per_scanline_xh_vi(ReplayerState &state, const Arguments &args)
+static bool run_per_scanline_xh_vi(ReplayerState &state, const Arguments &args, bool upscale)
 {
 	// Reference does not support any of this, so we test more directly.
 	// TODO: Verify this behavior against hardware.
@@ -161,37 +167,41 @@ static bool run_per_scanline_xh_vi(ReplayerState &state, const Arguments &args)
 	variant.fmt = VI_CONTROL_TYPE_RGBA8888_BIT;
 	variant.aa = VI_CONTROL_AA_MODE_RESAMP_ONLY_BIT;
 	set_default_vi_registers(state, variant);
+	auto &gpu = upscale ? *state.gpu_scaled : *state.gpu;
 
-	auto *fb = reinterpret_cast<uint32_t *>(state.gpu->get_rdram() + 4096);
+	auto *fb = reinterpret_cast<uint32_t *>(gpu.get_rdram() + 4096);
 	for (int y = 0; y < 240; y++)
 		for (int x = 0; x < 200; x++)
 			fb[200 * y + x] = x << 24;
 
-	state.gpu->set_vi_register(VIRegister::Origin, 4096);
-	state.gpu->set_vi_register(VIRegister::Width, 200);
-	state.gpu->set_vi_register(VIRegister::VStart, make_vi_start_register(VI_V_OFFSET_NTSC + 20 * 2, VI_V_OFFSET_NTSC + 200 * 2));
+	gpu.set_vi_register(VIRegister::Origin, 4096);
+	gpu.set_vi_register(VIRegister::Width, 200);
+	gpu.set_vi_register(VIRegister::VStart, make_vi_start_register(VI_V_OFFSET_NTSC + 20 * 2, VI_V_OFFSET_NTSC + 200 * 2));
 
-	state.gpu->begin_vi_register_per_scanline();
-	state.gpu->set_vi_register_for_scanline(VI_V_OFFSET_NTSC,
-	                                        make_vi_start_register(VI_H_OFFSET_NTSC, VI_H_OFFSET_NTSC + 320),
-	                                        make_vi_scale_register(256, 0));
+	gpu.begin_vi_register_per_scanline();
+	gpu.set_vi_register_for_scanline(VI_V_OFFSET_NTSC,
+	                                 make_vi_start_register(VI_H_OFFSET_NTSC, VI_H_OFFSET_NTSC + 320),
+	                                 make_vi_scale_register(256, 0));
 
-	state.gpu->set_vi_register_for_scanline(VI_V_OFFSET_NTSC + 50 * 2,
-	                                        make_vi_start_register(VI_H_OFFSET_NTSC, VI_H_OFFSET_NTSC + 640),
-	                                        make_vi_scale_register(240, 200));
+	gpu.set_vi_register_for_scanline(VI_V_OFFSET_NTSC + 50 * 2,
+	                                 make_vi_start_register(VI_H_OFFSET_NTSC, VI_H_OFFSET_NTSC + 640),
+	                                 make_vi_scale_register(240, 200));
 
-	state.gpu->set_vi_register_for_scanline(VI_V_OFFSET_NTSC + 100 * 2,
-	                                        make_vi_start_register(VI_H_OFFSET_NTSC - 8, VI_H_OFFSET_NTSC + 648),
-	                                        make_vi_scale_register(220, 400));
+	gpu.set_vi_register_for_scanline(VI_V_OFFSET_NTSC + 100 * 2,
+	                                 make_vi_start_register(VI_H_OFFSET_NTSC - 8, VI_H_OFFSET_NTSC + 648),
+	                                 make_vi_scale_register(220, 400));
 
-	state.gpu->set_vi_register_for_scanline(VI_V_OFFSET_NTSC + 150 * 2,
-	                                        make_vi_start_register(VI_H_OFFSET_NTSC + 8, VI_H_OFFSET_NTSC + 648),
-	                                        make_vi_scale_register(210, 600));
+	gpu.set_vi_register_for_scanline(VI_V_OFFSET_NTSC + 150 * 2,
+	                                 make_vi_start_register(VI_H_OFFSET_NTSC + 8, VI_H_OFFSET_NTSC + 648),
+	                                 make_vi_scale_register(210, 600));
 
-	state.gpu->end_vi_register_per_scanline();
+	gpu.end_vi_register_per_scanline();
 
 	std::vector<Interface::RGBA> reference_result;
-	reference_result.resize(640 * 240);
+	int scale_factor = upscale ? 2 : 1;
+	int ref_width = 640 * scale_factor;
+	int ref_height = 240 * scale_factor;
+	reference_result.resize(ref_width * ref_height);
 
 	const auto set_region = [&](int line, int h_start, int h_end, bool left_clamp, bool right_clamp, int x_add, int x_start) {
 		int x_base = h_start;
@@ -200,40 +210,49 @@ static bool run_per_scanline_xh_vi(ReplayerState &state, const Arguments &args)
 		if (!right_clamp)
 			h_end -= 7;
 
-		Interface::RGBA *ptr = reference_result.data() + 640 * line;
+		Interface::RGBA *ptr = reference_result.data() + ref_width * line;
 
 		int x_begin = std::max(h_start, 0);
 		int x_end = std::min(h_end, 640);
 
+		x_base *= scale_factor;
+		x_begin *= scale_factor;
+		x_end *= scale_factor;
+
 		for (int x = x_begin; x < x_end; x++)
 		{
-			int x_value = (x - x_base) * x_add + x_start;
-			int x_frac = (x_value >> 5) & 31;
-			int x_lo = x_value >> 10;
+			int sample_x = (x - x_base) * x_add + x_start * scale_factor;
+			int x_frac = (sample_x >> 5) & 31;
+			int x_lo = sample_x >> 10;
 			int x_hi = x_lo + 1;
+
+			x_lo /= scale_factor;
+			x_hi /= scale_factor;
+
 			int x_rounded = (x_lo * (32 - x_frac) + x_hi * x_frac + 16) >> 5;
 			ptr[x].r = x_rounded;
 		}
 	};
 
 	// Top 20 lines are blanked.
-	for (int y = 20; y < 50; y++)
+	for (int y = 20 * scale_factor; y < 50 * scale_factor; y++)
 		set_region(y, 0, 320, false, false, 256, 0);
-	for (int y = 50; y < 100; y++)
+	for (int y = 50 * scale_factor; y < 100 * scale_factor; y++)
 		set_region(y, 0, 640, false, false, 240, 200);
-	for (int y = 100; y < 150; y++)
+	for (int y = 100 * scale_factor; y < 150 * scale_factor; y++)
 		set_region(y, -8, 648, true, true, 220, 400);
-	for (int y = 150; y < 200; y++)
+	for (int y = 150 * scale_factor; y < 200 * scale_factor; y++)
 		set_region(y, 8, 640, false, true, 210, 600);
 
 	if (args.capture)
 		state.device->begin_renderdoc_capture();
-	state.combined->end_frame();
+	state.iface.set_context_index(0);
+	gpu.end_frame();
 	if (args.capture)
 		state.device->end_renderdoc_capture();
 
-	if (!compare_image(reference_result, 640, 240,
-					   state.iface.scanout_result[1], state.iface.widths[1], state.iface.heights[1]))
+	if (!compare_image(reference_result, ref_width, ref_height,
+	                   state.iface.scanout_result[0], state.iface.widths[0], state.iface.heights[0]))
 		return false;
 
 	return true;
@@ -390,7 +409,11 @@ static int main_inner(int argc, char **argv)
 	}});
 
 	suites.push_back({ "per-scanline-xh", [](ReplayerState &state, const Arguments &args) -> bool {
-		return run_per_scanline_xh_vi(state, args);
+		return run_per_scanline_xh_vi(state, args, false);
+	}});
+
+	suites.push_back({ "per-scanline-xh-upscale", [](ReplayerState &state, const Arguments &args) -> bool {
+		return run_per_scanline_xh_vi(state, args, true);
 	}});
 
 	if (list_suites)
@@ -454,4 +477,3 @@ int main(int argc, char **argv)
 	Granite::Global::deinit();
 	return ret;
 }
-

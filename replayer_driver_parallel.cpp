@@ -31,12 +31,13 @@ class ParallelReplayer : public ReplayerDriver
 {
 public:
 	ParallelReplayer(Vulkan::Device &device, CommandInterface &player_,
-	                 ReplayerEventInterface &iface_, bool benchmarking)
+	                 ReplayerEventInterface &iface_, bool benchmarking, bool upscale)
 		: player(player_)
 		, iface(iface_)
 		, host_memory(Util::memalign_calloc(64 * 1024, player.get_rdram_size()))
 		, gpu(device, host_memory.get(), 0, player.get_rdram_size(), player.get_hidden_rdram_size(),
-			  benchmarking ? 0 : (COMMAND_PROCESSOR_FLAG_HOST_VISIBLE_HIDDEN_RDRAM_BIT | COMMAND_PROCESSOR_FLAG_HOST_VISIBLE_TMEM_BIT))
+		      (benchmarking ? 0 : (COMMAND_PROCESSOR_FLAG_HOST_VISIBLE_HIDDEN_RDRAM_BIT | COMMAND_PROCESSOR_FLAG_HOST_VISIBLE_TMEM_BIT)) |
+		      (upscale ? COMMAND_PROCESSOR_FLAG_UPSCALING_2X_BIT : 0))
 	{
 		if (!gpu.device_is_supported())
 			throw std::runtime_error("GPU is not supported.");
@@ -189,8 +190,8 @@ void ParallelReplayer::set_vi_register(VIRegister index, uint32_t value)
 }
 
 std::unique_ptr<ReplayerDriver> create_replayer_driver_parallel(Vulkan::Device &device, CommandInterface &player, ReplayerEventInterface &iface,
-                                                                bool benchmarking)
+                                                                bool benchmarking, bool upscale)
 {
-	return std::make_unique<ParallelReplayer>(device, player, iface, benchmarking);
+	return std::make_unique<ParallelReplayer>(device, player, iface, benchmarking, upscale);
 }
 }
