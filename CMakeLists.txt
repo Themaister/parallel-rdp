@@ -262,4 +262,5 @@ add_vi_test(aa-extra-randomize-xy-scale-bias)
 add_vi_test(aa-none-randomize-hv-start-end)
 add_vi_test(aa-none-randomize-hv-start-end-pal)
 add_vi_test(aa-none-serrate)
+add_vi_test(per-scanline-xh)
 

@@ -43,6 +43,8 @@ static void print_help()
 	     "\t[--suite-glob <suite>]\n"
 	     "\t[--suite <suite>]\n"
 	     "\t[--range <lo> <hi>]\n"
+	     "\t[--capture]\n"
+	     "\t[--list-suites]\n"
 	     "\t[--verbose]\n"
 	);
 }
@@ -66,7 +68,7 @@ struct VITestVariant
 	bool serrate = false;
 };
 
-static bool run_conformance_vi(ReplayerState &state, const Arguments &args, const VITestVariant &variant)
+static void set_default_vi_registers(ReplayerState &state, const VITestVariant &variant)
 {
 	state.combined->set_vi_register(VIRegister::Control,
 	                                variant.aa |
@@ -94,6 +96,12 @@ static bool run_conformance_vi(ReplayerState &state, const Arguments &args, cons
 	state.combined->set_vi_register(VIRegister::HStart,
 	                                make_vi_start_register(variant.pal ? VI_H_OFFSET_PAL : VI_H_OFFSET_NTSC,
 	                                                       (variant.pal ? VI_H_OFFSET_PAL : VI_H_OFFSET_NTSC) + 640));
+}
+
+static bool run_conformance_vi(ReplayerState &state, const Arguments &args, const VITestVariant &variant)
+{
+	set_default_vi_registers(state, variant);
+
 	RNG rng;
 	for (unsigned i = 0; i <= args.hi; i++)
 	{
@@ -142,6 +150,92 @@ static bool run_conformance_vi(ReplayerState &state, const Arguments &args, cons
 		if (args.verbose)
 			LOGI("Iteration %u passed ...\n", i);
 	}
+	return true;
+}
+
+static bool run_per_scanline_xh_vi(ReplayerState &state, const Arguments &args)
+{
+	// Reference does not support any of this, so we test more directly.
+	// TODO: Verify this behavior against hardware.
+	VITestVariant variant;
+	variant.fmt = VI_CONTROL_TYPE_RGBA8888_BIT;
+	variant.aa = VI_CONTROL_AA_MODE_RESAMP_ONLY_BIT;
+	set_default_vi_registers(state, variant);
+
+	auto *fb = reinterpret_cast<uint32_t *>(state.gpu->get_rdram() + 4096);
+	for (int y = 0; y < 240; y++)
+		for (int x = 0; x < 200; x++)
+			fb[200 * y + x] = x << 24;
+
+	state.gpu->set_vi_register(VIRegister::Origin, 4096);
+	state.gpu->set_vi_register(VIRegister::Width, 200);
+	state.gpu->set_vi_register(VIRegister::VStart, make_vi_start_register(VI_V_OFFSET_NTSC + 20 * 2, VI_V_OFFSET_NTSC + 200 * 2));
+
+	state.gpu->begin_vi_register_per_scanline();
+	state.gpu->set_vi_register_for_scanline(VI_V_OFFSET_NTSC,
+	                                        make_vi_start_register(VI_H_OFFSET_NTSC, VI_H_OFFSET_NTSC + 320),
+	                                        make_vi_scale_register(256, 0));
+
+	state.gpu->set_vi_register_for_scanline(VI_V_OFFSET_NTSC + 50 * 2,
+	                                        make_vi_start_register(VI_H_OFFSET_NTSC, VI_H_OFFSET_NTSC + 640),
+	                                        make_vi_scale_register(240, 200));
+
+	state.gpu->set_vi_register_for_scanline(VI_V_OFFSET_NTSC + 100 * 2,
+	                                        make_vi_start_register(VI_H_OFFSET_NTSC - 8, VI_H_OFFSET_NTSC + 648),
+	                                        make_vi_scale_register(220, 400));
+
+	state.gpu->set_vi_register_for_scanline(VI_V_OFFSET_NTSC + 150 * 2,
+	                                        make_vi_start_register(VI_H_OFFSET_NTSC + 8, VI_H_OFFSET_NTSC + 648),
+	                                        make_vi_scale_register(210, 600));
+
+	state.gpu->end_vi_register_per_scanline();
+
+	std::vector<Interface::RGBA> reference_result;
+	reference_result.resize(640 * 240);
+
+	const auto set_region = [&](int line, int h_start, int h_end, bool left_clamp, bool right_clamp, int x_add, int x_start) {
+		int x_base = h_start;
+		if (!left_clamp)
+			h_start += 8;
+		if (!right_clamp)
+			h_end -= 7;
+
+		Interface::RGBA *ptr = reference_result.data() + 640 * line;
+
+		int x_begin = std::max(h_start, 0);
+		int x_end = std::min(h_end, 640);
+
+		for (int x = x_begin; x < x_end; x++)
+		{
+			int x_value = (x - x_base) * x_add + x_start;
+			int x_frac = (x_value >> 5) & 31;
+			int x_lo = x_value >> 10;
+			int x_hi = x_lo + 1;
+			int x_rounded = (x_lo * (32 - x_frac) + x_hi * x_frac + 16) >> 5;
+			ptr[x].r = x_rounded;
+		}
+	};
+
+	// Top 20 lines are blanked.
+	for (int y = 20; y < 50; y++)
+		set_region(y, 0, 320, false, false, 256, 0);
+	for (int y = 50; y < 100; y++)
+		set_region(y, 0, 640, false, false, 240, 200);
+	for (int y = 100; y < 150; y++)
+		set_region(y, -8, 648, true, true, 220, 400);
+	for (int y = 150; y < 200; y++)
+		set_region(y, 8, 640, false, true, 210, 600);
+
+	if (args.capture)
+		state.device->begin_renderdoc_capture();
+	state.combined->end_frame();
+	if (args.capture)
+		state.device->end_renderdoc_capture();
+
+	if (!compare_image(reference_result, 640, 240,
+					   state.iface.scanout_result[1], state.iface.widths[1], state.iface.heights[1]))
+		return false;
+
 	return true;
 }
 
@@ -293,6 +387,10 @@ static int main_inner(int argc, char **argv)
 		variant.aa = VI_CONTROL_AA_MODE_RESAMP_ONLY_BIT;
 		variant.serrate = true;
 		return run_conformance_vi(state, args, variant);
+	}});
+
+	suites.push_back({ "per-scanline-xh", [](ReplayerState &state, const Arguments &args) -> bool {
+		return run_per_scanline_xh_vi(state, args);
 	}});
 
 	if (list_suites)
