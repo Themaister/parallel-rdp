@@ -107,6 +107,10 @@ private:
 	void command(Op command_id, uint32_t word_count, const uint32_t *words) override;
 	void end_frame() override;
 	void set_vi_register(VIRegister index, uint32_t value) override;
+
+	void begin_vi_register_per_scanline() override;
+	void set_vi_register_for_scanline(unsigned vi_line, uint32_t h_start, uint32_t x_scale) override;
+	void end_vi_register_per_scanline() override;
 };
 
 static AngrylionReplayer *global_replayer;
@@ -163,6 +167,18 @@ void msg_debug(const char *err, ...)
 
 namespace RDP
 {
+void AngrylionReplayer::begin_vi_register_per_scanline()
+{
+}
+
+void AngrylionReplayer::set_vi_register_for_scanline(unsigned, uint32_t, uint32_t)
+{
+}
+
+void AngrylionReplayer::end_vi_register_per_scanline()
+{
+}
+
 void AngrylionReplayer::update_screen(const void *data, unsigned width, unsigned height, unsigned row_length)
 {
 	iface.update_screen(data, width, height, row_length);

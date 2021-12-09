@@ -73,10 +73,32 @@ struct SideBySideDriver : ReplayerDriver
 	void invalidate_caches() override;
 	void flush_caches() override;
 
+	void begin_vi_register_per_scanline() override;
+	void set_vi_register_for_scanline(unsigned vi_line, uint32_t h_start, uint32_t x_scale) override;
+	void end_vi_register_per_scanline() override;
+
 	ReplayerDriver *first;
 	ReplayerDriver *second;
 	ReplayerEventInterface &iface;
 };
+
+void SideBySideDriver::begin_vi_register_per_scanline()
+{
+	first->begin_vi_register_per_scanline();
+	second->begin_vi_register_per_scanline();
+}
+
+void SideBySideDriver::set_vi_register_for_scanline(unsigned vi_line, uint32_t h_start, uint32_t x_scale)
+{
+	first->set_vi_register_for_scanline(vi_line, h_start, x_scale);
+	second->set_vi_register_for_scanline(vi_line, h_start, x_scale);
+}
+
+void SideBySideDriver::end_vi_register_per_scanline()
+{
+	first->end_vi_register_per_scanline();
+	second->end_vi_register_per_scanline();
+}
 
 void SideBySideDriver::invalidate_caches()
 {

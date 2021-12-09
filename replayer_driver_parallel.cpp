@@ -71,7 +71,29 @@ private:
 
 	void invalidate_caches() override;
 	void flush_caches() override;
+
+	void begin_vi_register_per_scanline() override;
+	void set_vi_register_for_scanline(unsigned vi_line, uint32_t h_start, uint32_t x_scale) override;
+	void end_vi_register_per_scanline() override;
 };
+
+void ParallelReplayer::begin_vi_register_per_scanline()
+{
+	gpu.begin_vi_register_per_scanline(VideoInterface::PER_SCANLINE_HSTART_BIT |
+	                                   VideoInterface::PER_SCANLINE_XSCALE_BIT);
+}
+
+void ParallelReplayer::set_vi_register_for_scanline(unsigned vi_line, uint32_t h_start, uint32_t x_scale)
+{
+	gpu.set_vi_register_for_scanline(VideoInterface::PER_SCANLINE_HSTART_BIT, h_start);
+	gpu.set_vi_register_for_scanline(VideoInterface::PER_SCANLINE_XSCALE_BIT, x_scale);
+	gpu.latch_vi_register_for_scanline(vi_line);
+}
+
+void ParallelReplayer::end_vi_register_per_scanline()
+{
+	gpu.end_vi_register_per_scanline();
+}
 
 void ParallelReplayer::eof()
 {
