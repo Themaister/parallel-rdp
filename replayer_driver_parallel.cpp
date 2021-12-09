@@ -76,6 +76,8 @@ private:
 	void begin_vi_register_per_scanline() override;
 	void set_vi_register_for_scanline(unsigned vi_line, uint32_t h_start, uint32_t x_scale) override;
 	void end_vi_register_per_scanline() override;
+	void set_crop_rect(unsigned left, unsigned right, unsigned top, unsigned bottom) override;
+	ScanoutOptions::CropRect crop_rect;
 };
 
 void ParallelReplayer::begin_vi_register_per_scanline()
@@ -94,6 +96,11 @@ void ParallelReplayer::set_vi_register_for_scanline(unsigned vi_line, uint32_t h
 void ParallelReplayer::end_vi_register_per_scanline()
 {
 	gpu.end_vi_register_per_scanline();
+}
+
+void ParallelReplayer::set_crop_rect(unsigned left, unsigned right, unsigned top, unsigned bottom)
+{
+	crop_rect = { left, right, top, bottom, true };
 }
 
 void ParallelReplayer::eof()
@@ -180,8 +187,10 @@ void ParallelReplayer::end_frame()
 	ScanoutOptions opts = {};
 	opts.blend_previous_frame = true;
 	opts.upscale_deinterlacing = false;
+	opts.crop_rect = crop_rect;
 	gpu.scanout_sync(colors, width, height, opts);
 	iface.update_screen(colors.data(), width, height, width);
+	crop_rect.enable = false;
 }
 
 void ParallelReplayer::set_vi_register(VIRegister index, uint32_t value)

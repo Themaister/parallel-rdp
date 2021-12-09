@@ -78,6 +78,7 @@ public:
 	virtual void begin_vi_register_per_scanline() = 0;
 	virtual void set_vi_register_for_scanline(unsigned vi_line, uint32_t h_start, uint32_t x_scale) = 0;
 	virtual void end_vi_register_per_scanline() = 0;
+	virtual void set_crop_rect(unsigned left, unsigned right, unsigned top, unsigned bottom) = 0;
 };
 
 static inline bool command_is_draw_call(Op cmd_id)

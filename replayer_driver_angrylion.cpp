@@ -111,6 +111,7 @@ private:
 	void begin_vi_register_per_scanline() override;
 	void set_vi_register_for_scanline(unsigned vi_line, uint32_t h_start, uint32_t x_scale) override;
 	void end_vi_register_per_scanline() override;
+	void set_crop_rect(unsigned left, unsigned right, unsigned top, unsigned bottom) override;
 };
 
 static AngrylionReplayer *global_replayer;
@@ -182,6 +183,10 @@ void AngrylionReplayer::end_vi_register_per_scanline()
 void AngrylionReplayer::update_screen(const void *data, unsigned width, unsigned height, unsigned row_length)
 {
 	iface.update_screen(data, width, height, row_length);
+}
+
+void AngrylionReplayer::set_crop_rect(unsigned, unsigned, unsigned, unsigned)
+{
 }
 
 void AngrylionReplayer::message(MessageType type, const char *msg)

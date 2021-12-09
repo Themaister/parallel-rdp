@@ -159,7 +159,7 @@ static bool run_conformance_vi(ReplayerState &state, const Arguments &args, cons
 	return true;
 }
 
-static bool run_per_scanline_xh_vi(ReplayerState &state, const Arguments &args, bool upscale)
+static bool run_per_scanline_xh_vi(ReplayerState &state, const Arguments &args, bool upscale, bool crop)
 {
 	// Reference does not support any of this, so we test more directly.
 	// TODO: Verify this behavior against hardware.
@@ -243,6 +243,13 @@ static bool run_per_scanline_xh_vi(ReplayerState &state, const Arguments &args, 
 		set_region(y, -8, 648, true, true, 220, 400);
 	for (int y = 150 * scale_factor; y < 200 * scale_factor; y++)
 		set_region(y, 8, 640, false, true, 210, 600);
+
+	if (crop)
+	{
+		gpu.set_crop_rect(9, 10, 11, 12);
+		crop_image(reference_result, ref_width, ref_height,
+		           9 * scale_factor, 10 * scale_factor, 11 * scale_factor, 12 * scale_factor);
+	}
 
 	if (args.capture)
 		state.device->begin_renderdoc_capture();
@@ -409,11 +416,19 @@ static int main_inner(int argc, char **argv)
 	}});
 
 	suites.push_back({ "per-scanline-xh", [](ReplayerState &state, const Arguments &args) -> bool {
-		return run_per_scanline_xh_vi(state, args, false);
+		return run_per_scanline_xh_vi(state, args, false, false);
 	}});
 
 	suites.push_back({ "per-scanline-xh-upscale", [](ReplayerState &state, const Arguments &args) -> bool {
-		return run_per_scanline_xh_vi(state, args, true);
+		return run_per_scanline_xh_vi(state, args, true, false);
+	}});
+
+	suites.push_back({ "per-scanline-xh-crop", [](ReplayerState &state, const Arguments &args) -> bool {
+		return run_per_scanline_xh_vi(state, args, false, true);
+	}});
+
+	suites.push_back({ "per-scanline-xh-upscale-crop", [](ReplayerState &state, const Arguments &args) -> bool {
+		return run_per_scanline_xh_vi(state, args, true, true);
 	}});
 
 	if (list_suites)
