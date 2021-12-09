@@ -731,21 +731,48 @@ Vulkan::ImageHandle VideoInterface::scale_stage(Vulkan::CommandBuffer &cmd, Vulk
 			((regs.is_pal ? VI_V_RES_PAL: VI_V_RES_NTSC) >> int(!serrate)) * scaling_factor,
 			VK_FORMAT_R8G8B8A8_UNORM);
 
-	// Rescale crop pixels to preserve aspect ratio.
-	auto crop_pixels_y = options.crop_overscan_pixels * (serrate ? 2 : 1);
-	auto crop_pixels_x = unsigned(std::round(float(crop_pixels_y) * (float(rt_info.width) / float(rt_info.height))));
-	crop_pixels_x *= scaling_factor;
-	crop_pixels_y *= scaling_factor;
+	unsigned crop_left = 0;
+	unsigned crop_right = 0;
+	unsigned crop_top = 0;
+	unsigned crop_bottom = 0;
 
-	if (2 * crop_pixels_x < rt_info.width && 2 * crop_pixels_y < rt_info.height)
+	if (options.crop_rect.enable)
 	{
-		rt_info.width -= 2 * crop_pixels_x;
-		rt_info.height -= 2 * crop_pixels_y;
+		crop_left = options.crop_rect.left;
+		crop_right = options.crop_rect.right;
+		crop_top = options.crop_rect.top;
+		crop_bottom = options.crop_rect.bottom;
+
+		if (serrate)
+		{
+			crop_top *= 2;
+			crop_bottom *= 2;
+		}
+	}
+	else
+	{
+		// Rescale crop pixels to preserve aspect ratio.
+		auto crop_pixels_y = options.crop_overscan_pixels * (serrate ? 2 : 1);
+		auto crop_pixels_x = unsigned(std::round(float(crop_pixels_y) * (float(rt_info.width) / float(rt_info.height))));
+
+		crop_left = crop_right = crop_pixels_x;
+		crop_top = crop_bottom = crop_pixels_y;
+	}
+
+	crop_left *= scaling_factor;
+	crop_right *= scaling_factor;
+	crop_top *= scaling_factor;
+	crop_bottom *= scaling_factor;
+
+	if (crop_left + crop_right < rt_info.width && crop_top + crop_bottom < rt_info.height)
+	{
+		rt_info.width -= crop_left + crop_right;
+		rt_info.height -= crop_top + crop_bottom;
 	}
 	else
 	{
 		LOGE("Too large crop of %u x %u for RT %u x %u.\n",
-			 crop_pixels_x, crop_pixels_y, rt_info.width, rt_info.height);
+			 crop_left + crop_right, crop_top + crop_bottom, rt_info.width, rt_info.height);
 	}
 
 	rt_info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
@@ -811,8 +838,8 @@ Vulkan::ImageHandle VideoInterface::scale_stage(Vulkan::CommandBuffer &cmd, Vulk
 		push.info_y_shift++;
 	}
 
-	push.h_offset = int(crop_pixels_x);
-	push.v_offset = int(crop_pixels_y);
+	push.h_offset = int(crop_left);
+	push.v_offset = int(crop_top);
 	push.v_start = regs.v_start;
 	push.y_add = regs.init_y_add;
 	push.frame_count = frame_count;
@@ -856,7 +883,7 @@ Vulkan::ImageHandle VideoInterface::scale_stage(Vulkan::CommandBuffer &cmd, Vulk
 	if (!degenerate && regs.h_res > 0 && regs.v_res > 0)
 	{
 		VkRect2D rect = {{ regs.h_start, regs.v_start }, { uint32_t(regs.h_res), uint32_t(regs.v_res) }};
-		shift_rect(rect, -int(crop_pixels_x), -int(crop_pixels_y));
+		shift_rect(rect, -int(crop_left), -int(crop_top));
 
 		if (rect.extent.width > 0 && rect.extent.height > 0)
 		{
@@ -890,7 +917,7 @@ Vulkan::ImageHandle VideoInterface::scale_stage(Vulkan::CommandBuffer &cmd, Vulk
 			if (regs.h_res > 0)
 			{
 				VkRect2D rect = {{ regs.h_start, 0 }, { uint32_t(regs.h_res), prev_scanout_image->get_height() }};
-				shift_rect(rect, -int(crop_pixels_x), -int(crop_pixels_y));
+				shift_rect(rect, -int(crop_left), -int(crop_top));
 				if (rect.extent.width > 0 && rect.extent.height > 0)
 				{
 					cmd.set_scissor(rect);
@@ -904,7 +931,7 @@ Vulkan::ImageHandle VideoInterface::scale_stage(Vulkan::CommandBuffer &cmd, Vulk
 			if (regs.h_res > 0 && regs.v_start > 0)
 			{
 				VkRect2D rect = {{ regs.h_start, 0 }, { uint32_t(regs.h_res), uint32_t(regs.v_start) }};
-				shift_rect(rect, -int(crop_pixels_x), -int(crop_pixels_y));
+				shift_rect(rect, -int(crop_left), -int(crop_top));
 				if (rect.extent.width > 0 && rect.extent.height > 0)
 				{
 					cmd.set_scissor(rect);
@@ -916,7 +943,7 @@ Vulkan::ImageHandle VideoInterface::scale_stage(Vulkan::CommandBuffer &cmd, Vulk
 			if (regs.h_res_clamp > 0 && regs.v_res > 0)
 			{
 				VkRect2D rect = {{ regs.h_start_clamp, regs.v_start }, { uint32_t(regs.h_res_clamp), uint32_t(regs.v_res) }};
-				shift_rect(rect, -int(crop_pixels_x), -int(crop_pixels_y));
+				shift_rect(rect, -int(crop_left), -int(crop_top));
 				if (rect.extent.width > 0 && rect.extent.height > 0)
 				{
 					cmd.set_scissor(rect);
@@ -929,7 +956,7 @@ Vulkan::ImageHandle VideoInterface::scale_stage(Vulkan::CommandBuffer &cmd, Vulk
 			{
 				VkRect2D rect = {{ regs.h_start, regs.v_start + regs.v_res },
 				                 { uint32_t(regs.h_res), prev_scanout_image->get_height() - uint32_t(regs.v_start + regs.v_res) }};
-				shift_rect(rect, -int(crop_pixels_x), -int(crop_pixels_y));
+				shift_rect(rect, -int(crop_left), -int(crop_top));
 				if (rect.extent.width > 0 && rect.extent.height > 0)
 				{
 					cmd.set_scissor(rect);

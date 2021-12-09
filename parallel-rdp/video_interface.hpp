@@ -30,7 +30,24 @@ namespace RDP
 {
 struct ScanoutOptions
 {
+	// Simple (obsolete) crop method. If crop_rect.enable is false, this
+	// crops top / bottom with number of pixels (doubled if interlace),
+	// and left / right are cropped in an aspect preserving way.
+	// If crop_rect.enable is true,
+	// this is ignored and the crop_rect struct is used instead.
+	// Crop pixels are adjusted for upscaling, pixels are assumed to
+	// be specified for the original resolution.
 	unsigned crop_overscan_pixels = 0;
+
+	struct CropRect
+	{
+		unsigned left = 0;
+		unsigned right = 0;
+		unsigned top = 0; // Doubled if interlace
+		unsigned bottom = 0; // Doubled if interlace
+		bool enable = false;
+	} crop_rect;
+
 	unsigned downscale_steps = 0;
 
 	// Works around certain game bugs. Considered a hack if enabled.
