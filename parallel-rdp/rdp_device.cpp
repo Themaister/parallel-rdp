@@ -1152,14 +1152,9 @@ void CommandProcessor::scanout_async_buffer(VIScanoutBuffer &buffer, const Scano
 	device.submit(cmd, &buffer.fence);
 }
 
-void CommandProcessor::scanout_sync(std::vector<RGBA> &colors, unsigned &width, unsigned &height)
+void CommandProcessor::scanout_sync(std::vector<RGBA> &colors, unsigned &width, unsigned &height,
+                                    const ScanoutOptions &opts)
 {
-	ScanoutOptions opts = {};
-	// Downscale down to 1x, always.
-	opts.downscale_steps = 32;
-	opts.blend_previous_frame = true;
-	opts.upscale_deinterlacing = false;
-
 	VIScanoutBuffer scanout;
 	scanout_async_buffer(scanout, opts);
 

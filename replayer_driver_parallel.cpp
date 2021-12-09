@@ -175,7 +175,11 @@ void ParallelReplayer::end_frame()
 {
 	std::vector<RGBA> colors;
 	unsigned width, height;
-	gpu.scanout_sync(colors, width, height);
+
+	ScanoutOptions opts = {};
+	opts.blend_previous_frame = true;
+	opts.upscale_deinterlacing = false;
+	gpu.scanout_sync(colors, width, height, opts);
 	iface.update_screen(colors.data(), width, height, width);
 }
 

@@ -152,7 +152,7 @@ public:
 	void set_vi_register(VIRegister reg, uint32_t value);
 
 	Vulkan::ImageHandle scanout(const ScanoutOptions &opts = {});
-	void scanout_sync(std::vector<RGBA> &colors, unsigned &width, unsigned &height);
+	void scanout_sync(std::vector<RGBA> &colors, unsigned &width, unsigned &height, const ScanoutOptions &opts = {});
 	void scanout_async_buffer(VIScanoutBuffer &buffer, const ScanoutOptions &opts = {});
 
 	// Support for modifying certain registers per-scanline.
