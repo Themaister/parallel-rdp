@@ -292,23 +292,38 @@ VideoInterface::Registers VideoInterface::decode_vi_registers(HorizontalInfoLine
 		}
 	};
 
-	// TODO: Actually grab VI state per line.
-	int x_start = (vi_registers[unsigned(VIRegister::XScale)] >> 16) & 0xfff;
-	int x_add = vi_registers[unsigned(VIRegister::XScale)] & 0xfff;
-	int h_start = (vi_registers[unsigned(VIRegister::HStart)] >> 16) & 0x3ff;
-	int h_end = vi_registers[unsigned(VIRegister::HStart)] & 0x3ff;
-
-	if (degenerate_y)
+	if (degenerate_y || !per_line_state.ended)
 	{
+		int x_start = (vi_registers[unsigned(VIRegister::XScale)] >> 16) & 0xfff;
+		int x_add = vi_registers[unsigned(VIRegister::XScale)] & 0xfff;
+		int h_start = (vi_registers[unsigned(VIRegister::HStart)] >> 16) & 0x3ff;
+		int h_end = vi_registers[unsigned(VIRegister::HStart)] & 0x3ff;
+
+		HorizontalInfo line_info;
+
 		// Need to make sure we update bounding box state for X at least.
 		// This is treated as a degenerate frame, not necessarily invalid frame (null handle).
 		// This is to have same behavior as reference.
-		analyze_line(x_start, x_add, h_start, h_end, nullptr);
+		analyze_line(x_start, x_add, h_start, h_end, &line_info);
+
+		if (lines)
+			for (int line = reg.v_start; line < reg.v_start + reg.v_res; line++)
+				lines->lines[line] = line_info;
 	}
 	else
 	{
 		for (int line = reg.v_start; line < reg.v_start + reg.v_res; line++)
+		{
+			// TODO: No idea if this is correct. This intuitively makes sense, but that's about it.
+			int effective_line = 2 * line + v_start_offset + int(reg.v_current_line == 0);
+
+			int x_start = (per_line_state.x_scale.line_state[effective_line] >> 16) & 0xfff;
+			int x_add = per_line_state.x_scale.line_state[effective_line] & 0xfff;
+			int h_start = (per_line_state.h_start.line_state[effective_line] >> 16) & 0x3ff;
+			int h_end = per_line_state.h_start.line_state[effective_line] & 0x3ff;
+
 			analyze_line(x_start, x_add, h_start, h_end, lines ? &lines->lines[line] : nullptr);
+		}
 	}
 
 	// Effectively, these are bounding boxes.
@@ -1031,6 +1046,95 @@ Vulkan::ImageHandle VideoInterface::upscale_deinterlace(Vulkan::CommandBuffer &c
 	return deinterlaced_image;
 }
 
+void VideoInterface::begin_vi_register_per_scanline(PerScanlineRegisterFlags flags)
+{
+	per_line_state.flags = flags;
+	per_line_state.h_start.latched_state = vi_registers[unsigned(VIRegister::HStart)];
+	per_line_state.x_scale.latched_state = vi_registers[unsigned(VIRegister::XScale)];
+	per_line_state.h_start.line_state[0] = vi_registers[unsigned(VIRegister::HStart)];
+	per_line_state.x_scale.line_state[0] = vi_registers[unsigned(VIRegister::XScale)];
+	per_line_state.line = 0;
+	per_line_state.ended = false;
+}
+
+void VideoInterface::set_vi_register_for_scanline(PerScanlineRegisterBits reg, uint32_t value)
+{
+	if ((per_line_state.flags & reg) == 0)
+	{
+		LOGW("Attempting to set VI register %u per scanline, "
+		     "but was not flagged in begin_vi_register_per_scanline, ignoring.\n", reg);
+		return;
+	}
+
+	switch (reg)
+	{
+	case PER_SCANLINE_HSTART_BIT:
+		per_line_state.h_start.latched_state = value;
+		break;
+
+	case PER_SCANLINE_XSCALE_BIT:
+		per_line_state.x_scale.latched_state = value;
+		break;
+
+	default:
+		break;
+	}
+}
+
+void VideoInterface::latch_vi_register_for_scanline(unsigned vi_line)
+{
+	vi_line = std::min(vi_line, VI_V_END_MAX - 1);
+
+	if (vi_line <= per_line_state.line)
+	{
+		LOGW("Ignoring vi_line %u, current line is %u, not monotonically increasing, ignoring.\n",
+			 vi_line, per_line_state.line);
+		return;
+	}
+
+	unsigned new_counter = per_line_state.line;
+
+	while (++new_counter < vi_line)
+	{
+		per_line_state.h_start.line_state[new_counter] = per_line_state.h_start.line_state[per_line_state.line];
+		per_line_state.x_scale.line_state[new_counter] = per_line_state.x_scale.line_state[per_line_state.line];
+	}
+
+	per_line_state.h_start.line_state[new_counter] = per_line_state.h_start.latched_state;
+	per_line_state.x_scale.line_state[new_counter] = per_line_state.x_scale.latched_state;
+	per_line_state.line = new_counter;
+}
+
+void VideoInterface::clear_per_scanline_state()
+{
+	per_line_state.flags = 0;
+	per_line_state.ended = false;
+}
+
+void VideoInterface::end_vi_register_per_scanline()
+{
+	if (per_line_state.flags == 0)
+	{
+		LOGW("Cannot end vi_register_per_scanline() with per line flags == 0, ignoring.\n");
+		return;
+	}
+
+	if (per_line_state.ended)
+	{
+		LOGW("Already ended per line register state, ignoring.\n");
+		return;
+	}
+
+	unsigned new_counter = per_line_state.line;
+	while (++new_counter < VI_V_END_MAX)
+	{
+		per_line_state.h_start.line_state[new_counter] = per_line_state.h_start.line_state[per_line_state.line];
+		per_line_state.x_scale.line_state[new_counter] = per_line_state.x_scale.line_state[per_line_state.line];
+	}
+
+	per_line_state.ended = true;
+}
+
 Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const ScanoutOptions &options, unsigned scaling_factor_)
 {
 	int scaling_factor = int(scaling_factor_);
@@ -1038,6 +1142,7 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const S
 	HorizontalInfoLines lines;
 
 	auto regs = decode_vi_registers(&lines);
+	clear_per_scanline_state();
 
 	if (regs.vi_offset == 0)
 	{

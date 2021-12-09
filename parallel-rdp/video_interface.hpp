@@ -83,10 +83,39 @@ public:
 	void scanout_memory_range(unsigned &offset, unsigned &length) const;
 	void set_shader_bank(const ShaderBank *bank);
 
+	enum PerScanlineRegisterBits
+	{
+		// Currently supported bits.
+		PER_SCANLINE_HSTART_BIT = 1 << 0,
+		PER_SCANLINE_XSCALE_BIT = 1 << 1
+	};
+	using PerScanlineRegisterFlags = uint32_t;
+
+	void begin_vi_register_per_scanline(PerScanlineRegisterFlags flags);
+	void set_vi_register_for_scanline(PerScanlineRegisterBits reg, uint32_t value);
+	void latch_vi_register_for_scanline(unsigned vi_line);
+	void end_vi_register_per_scanline();
+
 private:
 	Vulkan::Device *device = nullptr;
 	Renderer *renderer = nullptr;
 	uint32_t vi_registers[unsigned(VIRegister::Count)] = {};
+
+	struct PerScanlineRegisterState
+	{
+		uint32_t latched_state;
+		uint32_t line_state[VI_V_END_MAX];
+	};
+
+	struct
+	{
+		PerScanlineRegisterState h_start;
+		PerScanlineRegisterState x_scale;
+		PerScanlineRegisterFlags flags = 0;
+		unsigned line = 0;
+		bool ended = false;
+	} per_line_state;
+
 	const Vulkan::Buffer *rdram = nullptr;
 	const Vulkan::Buffer *hidden_rdram = nullptr;
 	Vulkan::BufferHandle gamma_lut;
@@ -150,7 +179,10 @@ private:
 		// For AA stages.
 		int max_x, max_y;
 	};
+
 	Registers decode_vi_registers(HorizontalInfoLines *lines) const;
+	void clear_per_scanline_state();
+
 	Vulkan::ImageHandle vram_fetch_stage(const Registers &registers,
 	                                     unsigned scaling_factor) const;
 	Vulkan::ImageHandle aa_fetch_stage(Vulkan::CommandBuffer &cmd,
