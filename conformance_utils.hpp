@@ -143,7 +143,7 @@ struct ReplayerState
 	Vulkan::Context context;
 	std::unique_ptr<Vulkan::Device> owned_device;
 	Vulkan::Device *device = nullptr;
-	std::unique_ptr<ReplayerDriver> reference, gpu;
+	std::unique_ptr<ReplayerDriver> reference, gpu, gpu_scaled;
 	std::unique_ptr<ReplayerDriver> combined;
 	CommandBuilder builder;
 	Interface iface;
@@ -197,6 +197,7 @@ bool ReplayerState::init(Vulkan::Device *device_)
 
 	reference = create_replayer_driver_angrylion(builder, iface);
 	gpu = create_replayer_driver_parallel(*device, builder, iface, device_ != nullptr);
+	gpu_scaled = create_replayer_driver_parallel(*device, builder, iface, device_ != nullptr, true);
 	combined = create_side_by_side_driver(reference.get(), gpu.get(), iface);
 	builder.set_command_interface(combined.get());
 	return true;
@@ -329,6 +330,26 @@ static inline bool compare_image(const std::vector<Interface::RGBA> &reference,
 	}
 
 	return true;
+}
+
+static inline void crop_image(std::vector<Interface::RGBA> &reference,
+                              int &width, int &height,
+                              int left, int right, int top, int bottom)
+{
+	int new_width = width - left - right;
+	int new_height = height - top - bottom;
+	assert(new_width > 0 && new_height > 0);
+	std::vector<Interface::RGBA> new_reference(new_width * new_height);
+
+	for (int y = 0; y < new_height; y++)
+	{
+		memcpy(new_reference.data() + y * new_width, reference.data() + (y + top) * width + left,
+		       new_width * sizeof(Interface::RGBA));
+	}
+
+	reference = std::move(new_reference);
+	width = new_width;
+	height = new_height;
 }
 
 static inline void randomize_rdram(RNG &rng, ReplayerDriver &reference, ReplayerDriver &gpu)

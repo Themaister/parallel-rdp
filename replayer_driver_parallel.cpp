@@ -31,12 +31,13 @@ class ParallelReplayer : public ReplayerDriver
 {
 public:
 	ParallelReplayer(Vulkan::Device &device, CommandInterface &player_,
-	                 ReplayerEventInterface &iface_, bool benchmarking)
+	                 ReplayerEventInterface &iface_, bool benchmarking, bool upscale)
 		: player(player_)
 		, iface(iface_)
 		, host_memory(Util::memalign_calloc(64 * 1024, player.get_rdram_size()))
 		, gpu(device, host_memory.get(), 0, player.get_rdram_size(), player.get_hidden_rdram_size(),
-			  benchmarking ? 0 : (COMMAND_PROCESSOR_FLAG_HOST_VISIBLE_HIDDEN_RDRAM_BIT | COMMAND_PROCESSOR_FLAG_HOST_VISIBLE_TMEM_BIT))
+		      (benchmarking ? 0 : (COMMAND_PROCESSOR_FLAG_HOST_VISIBLE_HIDDEN_RDRAM_BIT | COMMAND_PROCESSOR_FLAG_HOST_VISIBLE_TMEM_BIT)) |
+		      (upscale ? COMMAND_PROCESSOR_FLAG_UPSCALING_2X_BIT : 0))
 	{
 		if (!gpu.device_is_supported())
 			throw std::runtime_error("GPU is not supported.");
@@ -71,7 +72,36 @@ private:
 
 	void invalidate_caches() override;
 	void flush_caches() override;
+
+	void begin_vi_register_per_scanline() override;
+	void set_vi_register_for_scanline(unsigned vi_line, uint32_t h_start, uint32_t x_scale) override;
+	void end_vi_register_per_scanline() override;
+	void set_crop_rect(unsigned left, unsigned right, unsigned top, unsigned bottom) override;
+	ScanoutOptions::CropRect crop_rect;
 };
+
+void ParallelReplayer::begin_vi_register_per_scanline()
+{
+	gpu.begin_vi_register_per_scanline(VideoInterface::PER_SCANLINE_HSTART_BIT |
+	                                   VideoInterface::PER_SCANLINE_XSCALE_BIT);
+}
+
+void ParallelReplayer::set_vi_register_for_scanline(unsigned vi_line, uint32_t h_start, uint32_t x_scale)
+{
+	gpu.set_vi_register_for_scanline(VideoInterface::PER_SCANLINE_HSTART_BIT, h_start);
+	gpu.set_vi_register_for_scanline(VideoInterface::PER_SCANLINE_XSCALE_BIT, x_scale);
+	gpu.latch_vi_register_for_scanline(vi_line);
+}
+
+void ParallelReplayer::end_vi_register_per_scanline()
+{
+	gpu.end_vi_register_per_scanline();
+}
+
+void ParallelReplayer::set_crop_rect(unsigned left, unsigned right, unsigned top, unsigned bottom)
+{
+	crop_rect = { left, right, top, bottom, true };
+}
 
 void ParallelReplayer::eof()
 {
@@ -153,8 +183,14 @@ void ParallelReplayer::end_frame()
 {
 	std::vector<RGBA> colors;
 	unsigned width, height;
-	gpu.scanout_sync(colors, width, height);
+
+	ScanoutOptions opts = {};
+	opts.blend_previous_frame = true;
+	opts.upscale_deinterlacing = false;
+	opts.crop_rect = crop_rect;
+	gpu.scanout_sync(colors, width, height, opts);
 	iface.update_screen(colors.data(), width, height, width);
+	crop_rect.enable = false;
 }
 
 void ParallelReplayer::set_vi_register(VIRegister index, uint32_t value)
@@ -163,8 +199,8 @@ void ParallelReplayer::set_vi_register(VIRegister index, uint32_t value)
 }
 
 std::unique_ptr<ReplayerDriver> create_replayer_driver_parallel(Vulkan::Device &device, CommandInterface &player, ReplayerEventInterface &iface,
-                                                                bool benchmarking)
+                                                                bool benchmarking, bool upscale)
 {
-	return std::make_unique<ParallelReplayer>(device, player, iface, benchmarking);
+	return std::make_unique<ParallelReplayer>(device, player, iface, benchmarking, upscale);
 }
 }
