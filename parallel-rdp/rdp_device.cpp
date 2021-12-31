@@ -39,6 +39,9 @@ using namespace Vulkan;
     if (cond) (flag) |= (mask); \
 } while(0)
 
+static bool is_dither_mode_forced = false;
+static uint8_t forced_dither_mode = 0;
+
 namespace RDP
 {
 CommandProcessor::CommandProcessor(Vulkan::Device &device_, void *rdram_ptr,
@@ -491,7 +494,7 @@ void CommandProcessor::op_set_other_modes(const uint32_t *words)
 
 	STATE_MASK(static_state.flags, bool(words[1] & (1 << 1)), RASTERIZATION_ALPHA_TEST_DITHER_BIT);
 	STATE_MASK(static_state.flags, bool(words[1] & (1 << 0)), RASTERIZATION_ALPHA_TEST_BIT);
-	static_state.dither = (words[0] >> 4) & 0x0f;
+	static_state.dither = (is_dither_mode_forced) ? (forced_dither_mode) : ((words[0] >> 4) & 0x0f);
 	STATE_MASK(depth_blend.flags, RGBDitherMode(static_state.dither >> 2) != RGBDitherMode::Off, DEPTH_BLEND_DITHER_ENABLE_BIT);
 	depth_blend.coverage_mode = static_cast<CoverageMode>((words[1] >> 8) & 3);
 	depth_blend.z_mode = static_cast<ZMode>((words[1] >> 10) & 3);
@@ -1124,6 +1127,11 @@ void CommandProcessor::drain_command_ring()
 
 void CommandProcessor::scanout_async_buffer(VIScanoutBuffer &buffer, const ScanoutOptions &opts)
 {
+	if (opts.force_dither_mode.enable)
+	{
+		is_dither_mode_forced = opts.force_dither_mode.enable;
+		forced_dither_mode = (opts.force_dither_mode.mode << 2);
+	}
 	auto handle = scanout(opts, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
 	if (!handle)
 	{

@@ -72,6 +72,15 @@ struct ScanoutOptions
 		bool divot_filter = true;
 		bool gamma_dither = true;
 	} vi;
+	
+	// If enabled, will force a specific dither mode to be used,
+	// rather than using the one that is native to the game.
+	struct
+	{
+		// Values equal to enum RGBDitherMode
+		uint8_t mode = 0;
+		bool enable = false;
+	} force_dither_mode;
 };
 
 struct VIScanoutBuffer
