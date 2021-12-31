@@ -71,6 +71,7 @@ struct ScanoutOptions
 		bool dither_filter = true;
 		bool divot_filter = true;
 		bool gamma_dither = true;
+		bool screen_dither = true;
 	} vi;
 };
 

@@ -39,6 +39,8 @@ using namespace Vulkan;
     if (cond) (flag) |= (mask); \
 } while(0)
 
+int ugly_hack_screen_dither_enable = 256;
+
 namespace RDP
 {
 CommandProcessor::CommandProcessor(Vulkan::Device &device_, void *rdram_ptr,
@@ -492,7 +494,12 @@ void CommandProcessor::op_set_other_modes(const uint32_t *words)
 	STATE_MASK(static_state.flags, bool(words[1] & (1 << 1)), RASTERIZATION_ALPHA_TEST_DITHER_BIT);
 	STATE_MASK(static_state.flags, bool(words[1] & (1 << 0)), RASTERIZATION_ALPHA_TEST_BIT);
 	static_state.dither = (words[0] >> 4) & 0x0f;
-	STATE_MASK(depth_blend.flags, RGBDitherMode(static_state.dither >> 2) != RGBDitherMode::Off, DEPTH_BLEND_DITHER_ENABLE_BIT);
+	if (ugly_hack_screen_dither_enable != 256) {
+		STATE_MASK(depth_blend.flags, RGBDitherMode(static_state.dither >> 2) != RGBDitherMode::Off, ugly_hack_screen_dither_enable);
+	}
+	else {
+		STATE_MASK(depth_blend.flags, RGBDitherMode(static_state.dither >> 2) != RGBDitherMode::Off, DEPTH_BLEND_DITHER_ENABLE_BIT);
+	}
 	depth_blend.coverage_mode = static_cast<CoverageMode>((words[1] >> 8) & 3);
 	depth_blend.z_mode = static_cast<ZMode>((words[1] >> 10) & 3);
 
@@ -1124,6 +1131,9 @@ void CommandProcessor::drain_command_ring()
 
 void CommandProcessor::scanout_async_buffer(VIScanoutBuffer &buffer, const ScanoutOptions &opts)
 {
+	if (!opts.vi.screen_dither && ugly_hack_screen_dither_enable != 0)
+		ugly_hack_screen_dither_enable = 0;
+
 	auto handle = scanout(opts, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
 	if (!handle)
 	{
