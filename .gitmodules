@@ -1,6 +1,6 @@
 [submodule "angrylion-rdp-plus"]
 	path = angrylion-rdp-plus
-	url = git://github.com/Themaister/angrylion-rdp-plus
+	url = https://github.com/Themaister/angrylion-rdp-plus
 [submodule "Granite"]
 	path = Granite
-	url = git://github.com/Themaister/Granite
+	url = https://github.com/Themaister/Granite

@@ -355,8 +355,21 @@ static bool run_conformance_rasterization(ReplayerState &state, const Arguments 
 	{
 		clear_rdram(*state.reference);
 		clear_rdram(*state.gpu);
-		state.builder.set_scissor_subpixels(19, 14, 1162, 801,
-		                                    variant.interlace, variant.interlace && bool(index & 1));
+
+		if (index & 2)
+		{
+			state.builder.set_scissor_subpixels(19, 14, 1162, 801,
+			                                    variant.interlace, variant.interlace && bool(index & 1));
+		}
+		else
+		{
+			// Test binning behavior for FILL / COPY in particular.
+			// FILL / COPY get coverage on edges, so the END coordinate of scissor should
+			// get coverage, but not for CYCLE1/2.
+			// This needs to be handled carefully when binning primitives.
+			state.builder.set_scissor_subpixels(0, 0, 1023 + ((index >> 3) & 7), 800,
+			                                    variant.interlace, variant.interlace && bool(index & 1));
+		}
 
 		state.builder.set_fill_color(uint32_t(rng.rnd()));
 		state.builder.set_depth_write(variant.depth && (rng.rnd() & 1) != 0);
@@ -421,7 +434,8 @@ static bool run_conformance_rasterization(ReplayerState &state, const Arguments 
 					rng.rnd() & 0xff);
 		}
 
-		if (variant.combiner_inputs || variant.convert_one || !variant.bilerp0)
+		if (variant.combiner_inputs || variant.convert_one || !variant.bilerp0 ||
+		    (variant.cycle_type == RDP::CycleType::Cycle2 && !variant.bilerp1))
 		{
 			state.builder.set_convert(
 					uint16_t(rng.rnd()),
@@ -962,6 +976,8 @@ static void print_help()
 	     "\t[--suite-glob <suite>]\n"
 	     "\t[--suite <suite>]\n"
 	     "\t[--range <lo> <hi>]\n"
+	     "\t[--capture]\n"
+	     "\t[--list-suites]\n"
 	     "\t[--verbose]\n"
 	);
 }
@@ -1571,6 +1587,51 @@ static int main_inner(int argc, char **argv)
 	suites.push_back({ "texture-load-tlut-4", run_conformance_load_tlut4 });
 	suites.push_back({ "texture-load-tlut-8", run_conformance_load_tlut8 });
 	suites.push_back({ "texture-load-tlut-16", run_conformance_load_tlut16 });
+
+#define TEXTURE_TEST_CONVERT_BASE(name, cycle, fmt, sample_q, mid, bilerp, conv_one) \
+	suites.push_back({"texture-convert-" #name, [](ReplayerState &state, const Arguments &args) -> bool { \
+		RasterizationTestVariant variant = {}; \
+		variant.color = true; \
+		variant.texture = true; \
+		variant.perspective = true; \
+		variant.texture_size = TextureSize::Bpp16; \
+		variant.texture_format = TextureFormat::fmt; \
+		variant.cycle_type = RDP::CycleType::cycle; \
+		variant.sample_quad = sample_q; \
+		variant.mid_texel = mid; \
+		variant.bilerp0 = bilerp; \
+		variant.bilerp1 = bilerp; \
+		variant.convert_one = conv_one; \
+		return run_conformance_rasterization(state, args, variant); \
+	}})
+
+#define TEXTURE_TEST_YUV_CONVERT_1CYCLE(name, sample_q, mid, bilerp) \
+	TEXTURE_TEST_CONVERT_BASE(1cycle-YUV##name, Cycle1, YUV, sample_q, mid, bilerp, false); \
+	TEXTURE_TEST_CONVERT_BASE(1cycle-YUV-conv##name, Cycle1, YUV, sample_q, mid, bilerp, true)
+#define TEXTURE_TEST_RGBA_CONVERT_1CYCLE(name, sample_q, mid, bilerp) \
+	TEXTURE_TEST_CONVERT_BASE(1cycle-RGBA##name, Cycle1, RGBA, sample_q, mid, bilerp, false); \
+	TEXTURE_TEST_CONVERT_BASE(1cycle-RGBA-conv##name, Cycle1, RGBA, sample_q, mid, bilerp, true);
+#define TEXTURE_TEST_YUV_CONVERT_2CYCLE(name, sample_q, mid, bilerp) \
+	TEXTURE_TEST_CONVERT_BASE(2cycle-YUV##name, Cycle2, YUV, sample_q, mid, bilerp, false); \
+	TEXTURE_TEST_CONVERT_BASE(2cycle-YUV-conv##name, Cycle2, YUV, sample_q, mid, bilerp, true)
+#define TEXTURE_TEST_RGBA_CONVERT_2CYCLE(name, sample_q, mid, bilerp) \
+	TEXTURE_TEST_CONVERT_BASE(2cycle-RGBA##name, Cycle2, RGBA, sample_q, mid, bilerp, false); \
+	TEXTURE_TEST_CONVERT_BASE(2cycle-RGBA-conv##name, Cycle2, RGBA, sample_q, mid, bilerp, true)
+
+#define TEXTURE_TEST_CONVERT(name, sample_a, mid, bilerp) \
+	TEXTURE_TEST_YUV_CONVERT_1CYCLE(name, sample_a, mid, bilerp); \
+	TEXTURE_TEST_RGBA_CONVERT_1CYCLE(name, sample_a, mid, bilerp); \
+	TEXTURE_TEST_YUV_CONVERT_2CYCLE(name, sample_a, mid, bilerp); \
+	TEXTURE_TEST_RGBA_CONVERT_2CYCLE(name, sample_a, mid, bilerp)
+
+	TEXTURE_TEST_CONVERT(plain, false, false, false);
+	TEXTURE_TEST_CONVERT(quad, true, false, false);
+	TEXTURE_TEST_CONVERT(mid, false, true, false);
+	TEXTURE_TEST_CONVERT(quad-mid, true, true, false);
+	TEXTURE_TEST_CONVERT(bilerp, false, false, true);
+	TEXTURE_TEST_CONVERT(quad-bilerp, true, false, true);
+	TEXTURE_TEST_CONVERT(bilerp-mid, false, true, true);
+	TEXTURE_TEST_CONVERT(quad-mid-bilerp, true, true, true);
 
 	if (list_suites)
 	{
