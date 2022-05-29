@@ -355,8 +355,21 @@ static bool run_conformance_rasterization(ReplayerState &state, const Arguments 
 	{
 		clear_rdram(*state.reference);
 		clear_rdram(*state.gpu);
-		state.builder.set_scissor_subpixels(19, 14, 1162, 801,
-		                                    variant.interlace, variant.interlace && bool(index & 1));
+
+		if (index & 2)
+		{
+			state.builder.set_scissor_subpixels(19, 14, 1162, 801,
+			                                    variant.interlace, variant.interlace && bool(index & 1));
+		}
+		else
+		{
+			// Test binning behavior for FILL / COPY in particular.
+			// FILL / COPY get coverage on edges, so the END coordinate of scissor should
+			// get coverage, but not for CYCLE1/2.
+			// This needs to be handled carefully when binning primitives.
+			state.builder.set_scissor_subpixels(0, 0, 511 + ((index >> 3) & 7), 800,
+			                                    variant.interlace, variant.interlace && bool(index & 1));
+		}
 
 		state.builder.set_fill_color(uint32_t(rng.rnd()));
 		state.builder.set_depth_write(variant.depth && (rng.rnd() & 1) != 0);
