@@ -484,8 +484,20 @@ i16x2 bilinear_3tap(i16x2 t00, i16x2 t10, i16x2 t01, i16x2 t11, ivec2 frac)
 	return accum;
 }
 
-i16x4 sample_texture(TileInfo tile, uint tmem_instance, ivec2 st, bool tlut, bool tlut_type, bool sample_quad, bool mid_texel, bool convert_one,
-                     i16x4 prev_cycle)
+i16x4 texture_convert_factors(i16x4 texel_in, i16x4 factors)
+{
+	ivec4 texel = bitfieldExtract(ivec4(texel_in), 0, 9);
+
+	int r = texel.b + ((factors.x * texel.g + 0x80) >> 8);
+	int g = texel.b + ((factors.y * texel.r + factors.z * texel.g + 0x80) >> 8);
+	int b = texel.b + ((factors.w * texel.r + 0x80) >> 8);
+	int a = texel.b;
+	return i16x4(r, g, b, a);
+}
+
+i16x4 sample_texture(TileInfo tile, uint tmem_instance, ivec2 st, bool tlut, bool tlut_type,
+                     bool sample_quad, bool mid_texel, bool convert_one, bool bilerp,
+                     i16x4 conversion_factors, i16x4 prev_cycle)
 {
 	st.x = clamp_and_shift_coord((tile.flags & TILE_INFO_CLAMP_S_BIT) != 0, st.x, int(tile.slo), int(tile.shi), int(tile.shift_s));
 	st.y = clamp_and_shift_coord((tile.flags & TILE_INFO_CLAMP_T_BIT) != 0, st.y, int(tile.tlo), int(tile.thi), int(tile.shift_t));
@@ -788,8 +800,23 @@ i16x4 sample_texture(TileInfo tile, uint tmem_instance, ivec2 st, bool tlut, boo
 		if (sample_quad)
 		{
 			int chroma_frac = ((s0 & 1) << 4) | (frac.x >> 1);
-			i16x2 accum_chroma = bilinear_3tap(t_base.xy, t10.xy, t01.xy, t11.xy, ivec2(chroma_frac, frac.y));
-			i16x2 accum_luma = bilinear_3tap(t_base.zw, t10.zw, t01.zw, t11.zw, frac);
+
+			i16x2 accum_chroma;
+			i16x2 accum_luma;
+
+			if (bilerp)
+			{
+				accum_chroma = bilinear_3tap(t_base.xy, t10.xy, t01.xy, t11.xy, ivec2(chroma_frac, frac.y));
+				accum_luma = bilinear_3tap(t_base.zw, t10.zw, t01.zw, t11.zw, frac);
+			}
+			else
+			{
+				// Weird path. Seems to pick either t00 or t11 for purposes of nearest.
+				// Bilinear footprint path, except it's not doing bilinear path.
+				accum_luma = frac.x + frac.y >= 32 ? t11.zw : t_base.zw;
+				accum_chroma = chroma_frac + frac.y >= 32 ? t11.xy : t_base.xy;
+			}
+
 			accum = i16x4(accum_chroma, accum_luma);
 		}
 		else
@@ -808,6 +835,14 @@ i16x4 sample_texture(TileInfo tile, uint tmem_instance, ivec2 st, bool tlut, boo
 		accum >>= I16_C(5);
 		accum += t_base;
 	}
+
+	// If we don't spend math on bilerp for this cycle, we get conversion instead.
+	// This happens regardless of convert_one. Convert_one in cycle 1 only means we take the
+	// previous texel cycle and perform some math on it.
+
+	if (!bilerp)
+		accum = texture_convert_factors(accum, conversion_factors);
+
 	return accum;
 }
 
@@ -889,17 +924,6 @@ void compute_lod_2cycle(inout uint tile0, inout uint tile1, out i16 lod_frac, ui
 			tile0 = (tile0 + tile_offset + (magnify ? 0 : 1)) & 7u;
 		}
 	}
-}
-
-i16x4 texture_convert_factors(i16x4 texel_in, i16x4 factors)
-{
-	ivec4 texel = bitfieldExtract(ivec4(texel_in), 0, 9);
-
-	int r = texel.b + ((factors.x * texel.g + 0x80) >> 8);
-	int g = texel.b + ((factors.y * texel.r + factors.z * texel.g + 0x80) >> 8);
-	int b = texel.b + ((factors.w * texel.r + 0x80) >> 8);
-	int a = texel.b;
-	return i16x4(r, g, b, a);
 }
 
 #endif
