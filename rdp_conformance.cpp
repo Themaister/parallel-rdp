@@ -962,6 +962,8 @@ static void print_help()
 	     "\t[--suite-glob <suite>]\n"
 	     "\t[--suite <suite>]\n"
 	     "\t[--range <lo> <hi>]\n"
+	     "\t[--capture]\n"
+	     "\t[--list-suites]\n"
 	     "\t[--verbose]\n"
 	);
 }
