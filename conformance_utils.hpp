@@ -407,8 +407,8 @@ static inline void setup_filesystems()
 	using namespace Granite;
 	using namespace Granite::Path;
 
-#ifdef ANDROID
-	filesystem()->register_protocol("rdp", std::make_unique<AssetManagerFilesystem>(""));
+#if defined(ANDROID) && 0
+	GRANITE_FILESYSTEM()->register_protocol("rdp", std::make_unique<AssetManagerFilesystem>(""));
 	LOGI("Overriding Android RDP filesystem.\n");
 #else
 	auto exec_path = get_executable_path();
