@@ -79,6 +79,9 @@ target_link_libraries(rdp-bench PRIVATE rdp-utils)
 target_compile_options(rdp-bench PRIVATE ${RDP_REPLAYER_CXX_FLAGS})
 set_target_properties(rdp-bench PROPERTIES LINK_FLAGS "${RDP_REPLAYER_LINK_FLAGS}")
 
+add_granite_offline_tool(parallel-rdp-integration-example integration_example.cpp)
+target_link_libraries(parallel-rdp-integration-example PRIVATE parallel-rdp granite-vulkan glfw)
+
 enable_testing()
 function(add_rdp_test NAME)
     add_test(NAME rdp-test-${NAME}
