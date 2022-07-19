@@ -79,8 +79,15 @@ target_link_libraries(rdp-bench PRIVATE rdp-utils)
 target_compile_options(rdp-bench PRIVATE ${RDP_REPLAYER_CXX_FLAGS})
 set_target_properties(rdp-bench PROPERTIES LINK_FLAGS "${RDP_REPLAYER_LINK_FLAGS}")
 
+# Native Vulkan integration example.
 add_granite_offline_tool(parallel-rdp-integration-example integration_example.cpp)
 target_link_libraries(parallel-rdp-integration-example PRIVATE parallel-rdp granite-vulkan glfw)
+
+# Integration example with OpenGL interop (based on Granite integration sample, extrapolate to D3D11/12 interop).
+add_granite_offline_tool(parallel-rdp-integration-example-gl integration_example_gl.cpp
+        Granite/tests/glad/src/glad.c)
+target_link_libraries(parallel-rdp-integration-example-gl PRIVATE parallel-rdp granite-vulkan glfw)
+target_include_directories(parallel-rdp-integration-example-gl PRIVATE Granite/tests/glad/include)
 
 enable_testing()
 function(add_rdp_test NAME)
