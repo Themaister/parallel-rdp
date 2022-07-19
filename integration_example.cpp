@@ -377,12 +377,15 @@ static void render_frame(Vulkan::Device &device, RDP::CommandProcessor &processo
 		cmd->set_depth_test(false, false);
 		cmd->set_cull_mode(VK_CULL_MODE_NONE);
 
-		cmd->set_texture(0, 0, image->get_view(), Vulkan::StockSampler::LinearClamp);
-		cmd->set_viewport(vp);
-
-		// The vertices are constants in the shader.
-		// Draws fullscreen quad using oversized triangle.
-		cmd->draw(3);
+		// If we don't have an image, we just get a cleared screen in the render pass.
+		if (image)
+		{
+			cmd->set_texture(0, 0, image->get_view(), Vulkan::StockSampler::LinearClamp);
+			cmd->set_viewport(vp);
+			// The vertices are constants in the shader.
+			// Draws fullscreen quad using oversized triangle.
+			cmd->draw(3);
+		}
 
 		cmd->end_render_pass();
 	}
@@ -487,10 +490,6 @@ int main()
 
 		// Flushes work and calls vkQueuePresentKHR.
 		wsi.end_frame();
-
-		// Optional optimization. If the device is otherwise not being concurrently accessed by other threads
-		// we can promote caches to read-only to avoid some locks in subsequent frames.
-		device.promote_read_write_caches_to_read_only();
 	}
 
 	// Make sure WSI is destroyed or torn down before we destroy GLFW window.
