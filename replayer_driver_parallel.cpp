@@ -41,11 +41,23 @@ public:
 	{
 		if (!gpu.device_is_supported())
 			throw std::runtime_error("GPU is not supported.");
+
+		gpu.set_validation_interface(&validation_iface);
 	}
 
 private:
 	CommandInterface &player;
 	ReplayerEventInterface &iface;
+
+	struct ValidationErrorAborter : ValidationInterface
+	{
+		void report_rdp_crash(ValidationError, const char *msg) override
+		{
+			LOGE("RDP crash: %s\n", msg);
+			abort();
+		}
+	} validation_iface;
+
 	struct AlignedDeleter
 	{
 		void operator()(void *ptr)

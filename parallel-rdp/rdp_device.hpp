@@ -124,6 +124,8 @@ public:
 
 	~CommandProcessor();
 
+	void set_validation_interface(ValidationInterface *iface);
+
 	bool device_is_supported() const;
 
 	// Synchronization.
