@@ -1021,11 +1021,20 @@ void DebugApplication::render_ui_view_state(unsigned width, unsigned height)
 				pixel_msg += Util::join(" [(", int(pix_other->x), ", ", int(pix_other->y), ", ", int(pix_other->z), ")]");
 			render_text_bottom_left_up(font, x, y, pixel_msg, vec3(1.0f));
 		}
-		else if (ui.replay_mode == ReplayMode::DrawCall && cached_color_image.fb_size == 2 && ui.vismode == VisualizationMode::Color)
+		else if (ui.replay_mode == ReplayMode::DrawCall && ui.vismode == VisualizationMode::Color)
 		{
-			pixel_msg = Util::join("RGB (5-bit): [(", int(pix.x >> 3), ", ", int(pix.y >> 3), ", ", int(pix.z >> 3), ")]");
-			if (pix_other)
-				pixel_msg += Util::join(" [(", int(pix_other->x >> 3), ", ", int(pix_other->y >> 3), ", ", int(pix_other->z >> 3), ")]");
+			if (cached_color_image.fb_size == 2)
+			{
+				pixel_msg = Util::join("RGB (5-bit): [(", int(pix.x >> 3), ", ", int(pix.y >> 3), ", ", int(pix.z >> 3), ")]");
+				if (pix_other)
+					pixel_msg += Util::join(" [(", int(pix_other->x >> 3), ", ", int(pix_other->y >> 3), ", ", int(pix_other->z >> 3), ")]");
+			}
+			else if (cached_color_image.fb_size == 3)
+			{
+				pixel_msg = Util::join("RGBA (8-bit): [(", int(pix.x), ", ", int(pix.y), ", ", int(pix.z), ", ", int(pix.w), ")]");
+				if (pix_other)
+					pixel_msg += Util::join(" [(", int(pix_other->x), ", ", int(pix_other->y), ", ", int(pix_other->z), ", ", int(pix_other->w), ")]");
+			}
 			render_text_bottom_left_up(font, x, y, pixel_msg, vec3(1.0f));
 		}
 		else if (ui.replay_mode == ReplayMode::DrawCall && ui.vismode == VisualizationMode::Depth)
