@@ -20,6 +20,7 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+#define NOMINMAX
 #include "conformance_utils.hpp"
 #include "global_managers.hpp"
 #include "cli_parser.hpp"

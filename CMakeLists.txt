@@ -13,7 +13,7 @@ project(rdp-replayer LANGUAGES CXX C)
 if (CMAKE_COMPILER_IS_GNUCXX OR (${CMAKE_CXX_COMPILER_ID} MATCHES "Clang"))
     set(RDP_REPLAYER_CXX_FLAGS -Wall -Wextra -Wno-missing-field-initializers -Wno-empty-body -ffast-math -Wno-unused-parameter -pthread -fwrapv)
 elseif (MSVC)
-    set(RDP_REPLAYER_CXX_FLAGS /D_CRT_SECURE_NO_WARNINGS /wd4267 /wd4244 /wd4309 /wd4005 /MP /DNOMINMAX)
+    set(RDP_REPLAYER_CXX_FLAGS /D_CRT_SECURE_NO_WARNINGS /wd4267 /wd4244 /wd4309 /wd4005 /MP)
 endif()
 
 set(GRANITE_ISPC_TEXTURE_COMPRESSION OFF CACHE BOOL "" FORCE)
