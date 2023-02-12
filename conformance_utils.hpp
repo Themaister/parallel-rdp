@@ -31,6 +31,7 @@
 #include "os_filesystem.hpp"
 #include "global_managers.hpp"
 #include "thread_group.hpp"
+#include "path_utils.hpp"
 #ifdef ANDROID
 #include "android.hpp"
 #endif
