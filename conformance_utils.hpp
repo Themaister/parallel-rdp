@@ -175,7 +175,7 @@ bool ReplayerState::init_common(Vulkan::Device *custom_device)
 		handles.timeline_trace_file = handles.thread_group->get_timeline_trace_file();
 		context.set_system_handles(handles);
 
-		if (!context.init_instance_and_device(nullptr, 0, nullptr, 0, Vulkan::CONTEXT_CREATION_DISABLE_BINDLESS_BIT))
+		if (!context.init_instance_and_device(nullptr, 0, nullptr, 0))
 		{
 			LOGE("Failed to create Vulkan context.\n");
 			return false;

@@ -1,0 +1,121 @@
+{
+    "$schema": "https://schema.khronos.org/vulkan/profiles-0.8.0-139.json#",
+    "capabilities": {
+        "baseline": {
+            "extensions": {
+                "VK_KHR_16bit_storage": 1,
+                "VK_KHR_8bit_storage": 1,
+                "VK_KHR_create_renderpass2": 1,
+                "VK_KHR_swapchain": 1
+            },
+            "features": {
+                "VkPhysicalDevice16BitStorageFeaturesKHR": {
+                    "storageBuffer16BitAccess": true
+                },
+                "VkPhysicalDevice8BitStorageFeaturesKHR": {
+                    "storageBuffer8BitAccess": true
+                }
+            }
+        },
+        "externalHost": {
+            "extensions": {
+                "VK_EXT_external_memory_host": 1
+            },
+            "properties": {
+                "VkPhysicalDeviceExternalMemoryHostPropertiesEXT": {
+                    "minImportedHostPointerAlignment": 65536
+                }
+            }
+        },
+        "smallArithmetic" : {
+            "extensions": {
+                "VK_KHR_shader_float16_int8": 1
+            },
+            "features": {
+                "VkPhysicalDeviceFeatures": {
+                    "shaderInt16": true
+                },
+                "VkPhysicalDeviceShaderFloat16Int8FeaturesKHR": {
+                    "shaderInt8": true
+                }
+            }
+        },
+        "subgroups": {
+            "extensions": {
+                "VK_EXT_subgroup_size_control": 1
+            },
+            "features": {
+                "VkPhysicalDeviceSubgroupSizeControlFeaturesEXT": {
+                    "computeFullSubgroups": true,
+                    "subgroupSizeControl": true
+                }
+            },
+            "properties": {
+                "VkPhysicalDeviceSubgroupSizeControlPropertiesEXT": {
+                    "requiredSubgroupSizeStages": [ "VK_SHADER_STAGE_COMPUTE_BIT" ]
+                },
+                "VkPhysicalDeviceSubgroupProperties": {
+                    "supportedOperations": [
+                        "VK_SUBGROUP_FEATURE_BALLOT_BIT",
+                        "VK_SUBGROUP_FEATURE_BASIC_BIT",
+                        "VK_SUBGROUP_FEATURE_VOTE_BIT",
+                        "VK_SUBGROUP_FEATURE_ARITHMETIC_BIT"
+                    ],
+                    "supportedStages": [ "VK_SHADER_STAGE_COMPUTE_BIT" ]
+                }
+            }
+        },
+        "sync2": {
+            "extensions": {
+                "VK_KHR_synchronization2": 1,
+                "VK_KHR_timeline_semaphore": 1
+            },
+            "features": {
+                "VkPhysicalDeviceSynchronization2FeaturesKHR": {
+                    "synchronization2": true
+                },
+                "VkPhysicalDeviceTimelineSemaphoreFeaturesKHR": {
+                    "timelineSemaphore": true
+                }
+            }
+        }
+    },
+    "profiles": {
+        "VP_PARALLEL_RDP_baseline": {
+            "version": 1,
+            "api-version": "1.1.0",
+            "label": "parallel-RDP baseline profile",
+            "description": "Minimum baseline for running parallel-RDP.",
+            "contributors": {},
+            "history": [
+                {
+                    "revision": 1,
+                    "date": "2023-04-12",
+                    "author": "Themaister",
+                    "comment": "First draft"
+                }
+            ],
+            "capabilities": [
+                "baseline"
+            ]
+        },
+        "VP_PARALLEL_RDP_optimal": {
+            "version": 1,
+            "api-version": "1.1.0",
+            "label": "parallel-RDP optimal profile",
+            "description": "Optimal configuration for running parallel-RDP.",
+            "contributors": {},
+            "history": [
+                {
+                    "revision": 1,
+                    "date": "2023-04-12",
+                    "author": "Themaister",
+                    "comment": "First draft"
+                }
+            ],
+            "capabilities": [
+                "baseline", "externalHost", "smallArithmetic", "subgroups", "sync2"
+            ]
+        }
+    }
+}

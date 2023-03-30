@@ -25,6 +25,9 @@ if (RDP_SANITIZE_ADDRESS)
 	set(RDP_REPLAYER_LINK_FLAGS "${RDP_REPLAYER_LINK_FLAGS} -fsanitize=address -latomic")
 endif()
 
+add_library(granite-vulkan-profiles INTERFACE)
+target_include_directories(granite-vulkan-profiles INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/vulkan-profile)
+set(GRANITE_VULKAN_PROFILES ON CACHE BOOL "" FORCE)
 add_subdirectory(Granite EXCLUDE_FROM_ALL)
 
 add_library(alp-core STATIC
