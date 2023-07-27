@@ -17,6 +17,7 @@ PARALLEL_RDP_SOURCES_CXX := \
         $(PARALLEL_RDP_IMPLEMENTATION)/vulkan/fence.cpp \
         $(PARALLEL_RDP_IMPLEMENTATION)/vulkan/fence_manager.cpp \
         $(PARALLEL_RDP_IMPLEMENTATION)/vulkan/image.cpp \
+        $(PARALLEL_RDP_IMPLEMENTATION)/vulkan/indirect_layout.cpp \
         $(PARALLEL_RDP_IMPLEMENTATION)/vulkan/memory_allocator.cpp \
         $(PARALLEL_RDP_IMPLEMENTATION)/vulkan/pipeline_event.cpp \
         $(PARALLEL_RDP_IMPLEMENTATION)/vulkan/query_pool.cpp \
