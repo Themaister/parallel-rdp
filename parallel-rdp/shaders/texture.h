@@ -524,6 +524,7 @@ i16x4 sample_texture(TileInfo tile, uint tmem_instance, ivec2 st, bool tlut, boo
 	i16x4 t_base, t10, t01, t11;
 	bool mid_texel = all(bvec4(mid_texel_state, bilerp, equal(frac, ivec2(0x10))));
 
+	bool upper_lut = sum_frac >= 0x20;
 	if (mid_texel)
 	{
 		// Ensure we sample all 4 texels.
@@ -546,7 +547,7 @@ i16x4 sample_texture(TileInfo tile, uint tmem_instance, ivec2 st, bool tlut, boo
 			// For TLUT, entries in the LUT are duplicated and we must make sure that we sample 3 different banks
 			// when we look up the TLUT entry. In normal situations, this is irrelevant, but we're trying to be accurate here.
 			bool upper = sum_frac >= 0x20;
-			uint addr_xor = upper ? 2 : 1;
+			uint addr_xor = upper_lut ? 2 : 1;
 
 			switch (int(tile.size))
 			{
