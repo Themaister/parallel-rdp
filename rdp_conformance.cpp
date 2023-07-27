@@ -1523,6 +1523,14 @@ static int main_inner(int argc, char **argv)
 	TEXTURE_TEST(yuv16, YUV, Bpp16, false, false, true);
 
 	TEXTURE_TEST_MID_TEXEL(rgba16-mid-texel, RGBA, Bpp16, false, false, true, true);
+	TEXTURE_TEST_MID_TEXEL(ci4-mid-texel, CI, Bpp4, false, false, true, true);
+	TEXTURE_TEST_MID_TEXEL(ci8-mid-texel, CI, Bpp8, false, false, true, true);
+	TEXTURE_TEST_MID_TEXEL(ci16-mid-texel, CI, Bpp16, false, false, true, true);
+	TEXTURE_TEST_MID_TEXEL(ci32-mid-texel, CI, Bpp32, false, false, true, true);
+	TEXTURE_TEST_MID_TEXEL(ci4-tlut-mid-texel, CI, Bpp4, true, false, true, true);
+	TEXTURE_TEST_MID_TEXEL(ci8-tlut-mid-texel, CI, Bpp8, true, false, true, true);
+	TEXTURE_TEST_MID_TEXEL(ci16-tlut-mid-texel, CI, Bpp16, true, false, true, true);
+	TEXTURE_TEST_MID_TEXEL(ci32-tlut-mid-texel, CI, Bpp32, true, false, true, true);
 
 	TEXTURE_TEST(rgba4-nearest, RGBA, Bpp4, false, false, false);
 	TEXTURE_TEST(rgba8-nearest, RGBA, Bpp8, false, false, false);
