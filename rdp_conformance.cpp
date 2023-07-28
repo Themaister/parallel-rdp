@@ -1531,6 +1531,10 @@ static int main_inner(int argc, char **argv)
 	TEXTURE_TEST_MID_TEXEL(ci8-tlut-mid-texel, CI, Bpp8, true, false, true, true);
 	TEXTURE_TEST_MID_TEXEL(ci16-tlut-mid-texel, CI, Bpp16, true, false, true, true);
 	TEXTURE_TEST_MID_TEXEL(ci32-tlut-mid-texel, CI, Bpp32, true, false, true, true);
+	TEXTURE_TEST_MID_TEXEL(ci4-tlut-mid-texel-no-quad, CI, Bpp4, true, false, false, true);
+	TEXTURE_TEST_MID_TEXEL(ci8-tlut-mid-texel-no-quad, CI, Bpp8, true, false, false, true);
+	TEXTURE_TEST_MID_TEXEL(ci16-tlut-mid-texel-no-quad, CI, Bpp16, true, false, false, true);
+	TEXTURE_TEST_MID_TEXEL(ci32-tlut-mid-texel-no-quad, CI, Bpp32, true, false, false, true);
 
 	TEXTURE_TEST(rgba4-nearest, RGBA, Bpp4, false, false, false);
 	TEXTURE_TEST(rgba8-nearest, RGBA, Bpp8, false, false, false);
@@ -1554,6 +1558,10 @@ static int main_inner(int argc, char **argv)
 	TEXTURE_TEST(ci8-tlut, CI, Bpp8, true, false, true);
 	TEXTURE_TEST(ci16-tlut, CI, Bpp16, true, false, true);
 	TEXTURE_TEST(ci32-tlut, CI, Bpp32, true, false, true);
+	TEXTURE_TEST(ci4-tlut-no-quad, CI, Bpp4, true, false, false);
+	TEXTURE_TEST(ci8-tlut-no-quad, CI, Bpp8, true, false, false);
+	TEXTURE_TEST(ci16-tlut-no-quad, CI, Bpp16, true, false, false);
+	TEXTURE_TEST(ci32-tlut-no-quad, CI, Bpp32, true, false, false);
 	TEXTURE_TEST(ia4-tlut, IA, Bpp4, true, false, true);
 	TEXTURE_TEST(ia8-tlut, IA, Bpp8, true, false, true);
 	TEXTURE_TEST(ia16-tlut, IA, Bpp16, true, false, true);
@@ -1702,4 +1710,3 @@ int main(int argc, char **argv)
 	Granite::Global::deinit();
 	return ret;
 }
-
