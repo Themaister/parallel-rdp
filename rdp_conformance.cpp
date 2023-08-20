@@ -1057,7 +1057,7 @@ static int main_inner(int argc, char **argv)
 		return run_conformance_rasterization(state, args, variant);
 	}});
 
-#define COPY_TEST(name, tmem_bpp, fb_bpp, atest, lut) \
+#define COPY_TEST_PERSPECTIVE(name, tmem_bpp, fb_bpp, atest, lut, persp) \
 	suites.push_back({ "copy-" #name, [](ReplayerState &state, const Arguments &args) -> bool { \
 		RasterizationTestVariant variant = {}; \
 		variant.cycle_type = CycleType::Copy; \
@@ -1069,8 +1069,10 @@ static int main_inner(int argc, char **argv)
 		variant.fb_size = TextureSize::fb_bpp; \
 		variant.alpha_test = atest; \
 		variant.tlut = lut; \
+		variant.perspective = persp; \
 		return run_conformance_rasterization(state, args, variant); \
 	}})
+#define COPY_TEST(name, tmem_bpp, fb_bpp, atest, lut) COPY_TEST_PERSPECTIVE(name, tmem_bpp, fb_bpp, atest, lut, false)
 	COPY_TEST(32bpp-fb8, Bpp32, Bpp8, false, false);
 	COPY_TEST(32bpp-fb16, Bpp32, Bpp16, false, false);
 
@@ -1092,6 +1094,11 @@ static int main_inner(int argc, char **argv)
 	COPY_TEST(16bpp-fb16-tlut, Bpp16, Bpp16, false, true);
 
 	COPY_TEST(16bpp-fb16-alpha-test, Bpp16, Bpp16, true, false);
+
+	COPY_TEST_PERSPECTIVE(8bpp-fb8-perspective, Bpp8, Bpp8, false, false, true);
+	COPY_TEST_PERSPECTIVE(8bpp-fb16-perspective, Bpp8, Bpp16, false, false, true);
+	COPY_TEST_PERSPECTIVE(16bpp-fb8-perspective, Bpp16, Bpp8, false, false, true);
+	COPY_TEST_PERSPECTIVE(16bpp-fb16-perspective, Bpp16, Bpp16, false, false, true);
 
 	suites.push_back({ "fill-rect", [](ReplayerState &state, const Arguments &args) -> bool {
 		RasterizationTestVariant variant = {};

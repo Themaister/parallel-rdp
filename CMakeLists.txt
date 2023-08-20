@@ -132,6 +132,11 @@ add_rdp_test(copy-16bpp-fb8)
 add_rdp_test(copy-16bpp-fb16)
 add_rdp_test(copy-16bpp-fb16-alpha-test)
 
+add_rdp_test(copy-8bpp-fb8-perspective)
+add_rdp_test(copy-8bpp-fb16-perspective)
+add_rdp_test(copy-16bpp-fb8-perspective)
+add_rdp_test(copy-16bpp-fb16-perspective)
+
 add_rdp_test(fill-rect)
 add_rdp_test(tex-rect)
 
