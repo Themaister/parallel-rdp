@@ -53,7 +53,7 @@ cp -v Granite/third_party/volk/volk.h "$OUTDIR/volk/"
 cp -v Granite/third_party/volk/volk.c "$OUTDIR/volk/"
 cp -v Granite/vulkan/*.cpp "$OUTDIR/vulkan/"
 cp -v Granite/vulkan/*.hpp "$OUTDIR/vulkan/"
-rm "$OUTDIR/vulkan/*dxgi*"
+rm "$OUTDIR"/vulkan/wsi_dxgi.*
 cp -v Granite/vulkan/texture/texture_format.* "$OUTDIR/vulkan/texture"
 cp -v Granite/third_party/khronos/vulkan-headers/include/vulkan/*.h "$OUTDIR/vulkan-headers/include/vulkan"
 cp -v Granite/third_party/khronos/vulkan-headers/include/vk_video/*.h "$OUTDIR/vulkan-headers/include/vk_video"
