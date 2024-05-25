@@ -99,6 +99,10 @@ struct GLFWPlatform : public Vulkan::WSIPlatform
 		glfwPollEvents();
 	}
 
+	void poll_input_async(Granite::InputTrackerHandler *) override
+	{
+	}
+
 	void update_framebuffer_size()
 	{
 		int actual_width, actual_height;

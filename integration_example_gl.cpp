@@ -355,12 +355,12 @@ int main()
 
 	// Validate that the GL device and Vulkan device match. Relevant for Win32 where LUID is a thing.
 	auto &features = device.get_device_features();
-	if (features.id_properties.deviceLUIDValid)
+	if (features.vk11_props.deviceLUIDValid)
 	{
 		GLubyte luid[GL_LUID_SIZE_EXT] = {};
 		glGetUnsignedBytevEXT(GL_DEVICE_LUID_EXT, luid);
 
-		if (memcmp(features.id_properties.deviceLUID, luid, GL_LUID_SIZE_EXT) != 0)
+		if (memcmp(features.vk11_props.deviceLUID, luid, GL_LUID_SIZE_EXT) != 0)
 		{
 			LOGE("LUID mismatch.\n");
 			return EXIT_FAILURE;
