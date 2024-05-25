@@ -1131,7 +1131,7 @@ static bool combiner_uses_lod_frac(const StaticRasterizationState &state)
 void Renderer::deduce_noise_state()
 {
 	auto &state = stream.static_raster_state;
-	state.flags &= ~RASTERIZATION_NEED_NOISE_BIT;
+	state.flags &= ~(RASTERIZATION_NEED_NOISE_BIT | RASTERIZATION_NEED_NOISE_DUAL_BIT);
 
 	// Figure out if we need to seed noise variable for this primitive.
 	if ((state.dither & 3) == 2 || ((state.dither >> 2) & 3) == 2)
@@ -1144,12 +1144,17 @@ void Renderer::deduce_noise_state()
 		return;
 
 	if ((state.flags & RASTERIZATION_MULTI_CYCLE_BIT) != 0)
-	{
 		if (state.combiner[0].rgb.muladd == RGBMulAdd::Noise)
 			state.flags |= RASTERIZATION_NEED_NOISE_BIT;
-	}
+
 	if (state.combiner[1].rgb.muladd == RGBMulAdd::Noise)
 		state.flags |= RASTERIZATION_NEED_NOISE_BIT;
+
+	// If both cycles use noise, they need to observe different values.
+	if ((state.flags & RASTERIZATION_MULTI_CYCLE_BIT) != 0 &&
+	    state.combiner[0].rgb.muladd == RGBMulAdd::Noise &&
+	    state.combiner[1].rgb.muladd == RGBMulAdd::Noise)
+		state.flags |= RASTERIZATION_NEED_NOISE_DUAL_BIT;
 
 	if ((state.flags & (RASTERIZATION_ALPHA_TEST_BIT | RASTERIZATION_ALPHA_TEST_DITHER_BIT)) ==
 	    (RASTERIZATION_ALPHA_TEST_BIT | RASTERIZATION_ALPHA_TEST_DITHER_BIT))
