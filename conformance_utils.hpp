@@ -198,7 +198,7 @@ bool ReplayerState::init(Vulkan::Device *device_)
 
 	reference = create_replayer_driver_angrylion(builder, iface);
 	gpu = create_replayer_driver_parallel(*device, builder, iface, device_ != nullptr);
-	gpu_scaled = create_replayer_driver_parallel(*device, builder, iface, device_ != nullptr, true);
+	gpu_scaled = create_replayer_driver_parallel(*device, builder, iface, device_ != nullptr, false);
 	combined = create_side_by_side_driver(reference.get(), gpu.get(), iface);
 	builder.set_command_interface(combined.get());
 	return true;
