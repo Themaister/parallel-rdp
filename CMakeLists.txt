@@ -19,6 +19,7 @@ endif()
 set(GRANITE_ISPC_TEXTURE_COMPRESSION OFF CACHE BOOL "" FORCE)
 set(GRANITE_ASTC_ENCODER_COMPRESSION OFF CACHE BOOL "" FORCE)
 option(RDP_SANITIZE_ADDRESS "Sanitize address" OFF)
+option(RDP_INTEGRATION_EXAMPLE "Build RDP integration examples with API inter-op" OFF)
 
 if (RDP_SANITIZE_ADDRESS)
 	set(RDP_REPLAYER_CXX_FLAGS ${RDP_REPLAYER_CXX_FLAGS} -fsanitize=address)
@@ -82,16 +83,18 @@ target_link_libraries(rdp-bench PRIVATE rdp-utils)
 target_compile_options(rdp-bench PRIVATE ${RDP_REPLAYER_CXX_FLAGS})
 set_target_properties(rdp-bench PROPERTIES LINK_FLAGS "${RDP_REPLAYER_LINK_FLAGS}")
 
-if (NOT ANDROID)
-    # Native Vulkan integration example.
-    add_granite_offline_tool(parallel-rdp-integration-example integration_example.cpp)
-    target_link_libraries(parallel-rdp-integration-example PRIVATE parallel-rdp granite-vulkan glfw)
+if (RDP_INTEGRATION_EXAMPLE)
+    if (NOT ANDROID)
+        # Native Vulkan integration example.
+        add_granite_offline_tool(parallel-rdp-integration-example integration_example.cpp)
+        target_link_libraries(parallel-rdp-integration-example PRIVATE parallel-rdp granite-vulkan glfw)
 
-    # Integration example with OpenGL interop (based on Granite integration sample, extrapolate to D3D11/12 interop).
-    add_granite_offline_tool(parallel-rdp-integration-example-gl integration_example_gl.cpp
-        Granite/tests/glad/src/glad.c)
-    target_link_libraries(parallel-rdp-integration-example-gl PRIVATE parallel-rdp granite-vulkan glfw)
-    target_include_directories(parallel-rdp-integration-example-gl PRIVATE Granite/tests/glad/include)
+        # Integration example with OpenGL interop (based on Granite integration sample, extrapolate to D3D11/12 interop).
+        add_granite_offline_tool(parallel-rdp-integration-example-gl integration_example_gl.cpp
+            Granite/tests/glad/src/glad.c)
+        target_link_libraries(parallel-rdp-integration-example-gl PRIVATE parallel-rdp granite-vulkan glfw)
+        target_include_directories(parallel-rdp-integration-example-gl PRIVATE Granite/tests/glad/include)
+    endif()
 endif()
 
 enable_testing()
