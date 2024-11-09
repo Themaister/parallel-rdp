@@ -1118,6 +1118,17 @@ static int main_inner(int argc, char **argv)
 		return run_conformance_rasterization(state, args, variant);
 	}});
 
+	suites.push_back({ "tex-rect-i8", [](ReplayerState &state, const Arguments &args) -> bool {
+		RasterizationTestVariant variant = {};
+		variant.tex_rect = true;
+		variant.texture = true;
+		variant.color = true;
+		variant.cycle_type = CycleType::Cycle1;
+		variant.texture_size = TextureSize::Bpp16;
+		variant.fb_size = TextureSize::Bpp8;
+		return run_conformance_rasterization(state, args, variant);
+	}});
+
 	suites.push_back({ "rasterization-noaa", [](ReplayerState &state, const Arguments &args) -> bool {
 		RasterizationTestVariant variant = {};
 		return run_conformance_rasterization(state, args, variant);

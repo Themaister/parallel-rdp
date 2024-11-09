@@ -142,6 +142,7 @@ add_rdp_test(copy-16bpp-fb16-perspective)
 
 add_rdp_test(fill-rect)
 add_rdp_test(tex-rect)
+add_rdp_test(tex-rect-i8)
 
 add_rdp_test(rasterization-noaa)
 add_rdp_test(rasterization-aa)
